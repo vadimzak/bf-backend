@@ -2,9 +2,7 @@ version: '3.8'
 
 services:
   sample-app:
-    build: 
-      context: .
-      target: production
+    image: sample-app:latest
     restart: unless-stopped
     ports:
       - "3001:3001"
@@ -29,9 +27,7 @@ services:
 
   # Scheduled tasks runner
   cron-tasks:
-    build: 
-      context: .
-      target: production
+    image: sample-app:latest
     restart: unless-stopped
     command: ["node", "cron/scheduler.js"]
     environment:
@@ -62,9 +58,8 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/ssl:/etc/ssl/certs:ro
-      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - /var/www/ssl:/etc/ssl:ro
     depends_on:
       - sample-app
     networks:
