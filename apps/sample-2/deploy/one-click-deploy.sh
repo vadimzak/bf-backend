@@ -529,7 +529,9 @@ main() {
     check_prerequisites
     
     if [[ "$DRY_RUN" == "false" ]]; then
-        pre_deployment_health_check
+        if [[ "$FORCE" == "false" ]]; then
+            pre_deployment_health_check
+        fi
         commit_and_push
     fi
     
