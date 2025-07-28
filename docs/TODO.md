@@ -1,0 +1,3 @@
+- cleanup
+- make sure all packages are latest version
+- security overview (incl AWS account)

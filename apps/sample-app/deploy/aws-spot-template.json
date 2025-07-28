@@ -1,0 +1,50 @@
+{
+  "LaunchTemplateName": "sample-app-spot-template",
+  "LaunchTemplateData": {
+    "ImageId": "ami-0c02fb55956c7d316",
+    "InstanceType": "t3a.small",
+    "SecurityGroupIds": ["sg-xxxxxxxxx"],
+    "KeyName": "your-key-pair",
+    "IamInstanceProfile": {
+      "Name": "sample-app-ec2-role"
+    },
+    "UserData": "IyEvYmluL2Jhc2gKCiMgVXNlciBkYXRhIHNjcmlwdCBmb3Igc2FtcGxlLWFwcCBzcG90IGluc3RhbmNlCgojIFVwZGF0ZSBzeXN0ZW0KQVNTX0lEPSQod2hvYW1pKQplY2hvICJTdGFydGluZyBzZXR1cCBmb3IgJEFTU19JRCIgPj4gL3RtcC9zZXR1cC5sb2cKCnl1bSB1cGRhdGUgLXkgPj4gL3RtcC9zZXR1cC5sb2cgMj4mMQoKIyBJbnN0YWxsIERvY2tlcgp5dW0gaW5zdGFsbCAteSBkb2NrZXIgPj4gL3RtcC9zZXR1cC5sb2cgMj4mMQpzeXN0ZW1jdGwgc3RhcnQgZG9ja2VyCnN5c3RlbWN0bCBlbmFibGUgZG9ja2VyCnVzZXJtb2QgLWEgLUcgZG9ja2VyIGVjMi11c2VyCgojIEluc3RhbGwgRG9ja2VyIENvbXBvc2UKY3VybCAtTCAiaHR0cHM6Ly9naXRodWIuY29tL2RvY2tlci9jb21wb3NlL3JlbGVhc2VzL2xhdGVzdC9kb3dubG9hZC9kb2NrZXItY29tcG9zZS0kKHVuYW1lIC1zKS0kKHVuYW1lIC1tKSIgLW8gL3Vzci9sb2NhbC9iaW4vZG9ja2VyLWNvbXBvc2UKY2htb2QgK3ggL3Vzci9sb2NhbC9iaW4vZG9ja2VyLWNvbXBvc2UKbG4gLXNmIC91c3IvbG9jYWwvYmluL2RvY2tlci1jb21wb3NlIC91c3IvYmluL2RvY2tlci1jb21wb3NlCgojIEluc3RhbGwgZ2l0Cnl1bSBpbnN0YWxsIC15IGdpdCA+PiAvdG1wL3NldHVwLmxvZyAyPiYxCgojIEluc3RhbGwgbmdpbngKeXVtIGluc3RhbGwgLXkgbmdpbnggPj4gL3RtcC9zZXR1cC5sb2cgMj4mMQpzeXN0ZW1jdGwgZW5hYmxlIG5naW54CgojIEluc3RhbGwgY2VydGJvdAp5dW0gaW5zdGFsbCAteSBweXRob24zIHB5dGhvbjMtcGlwID4+IC90bXAvc2V0dXAubG9nIDI+JjEKcGlwMyBpbnN0YWxsIGNlcnRib3QgY2VydGJvdC1uZ2lueCA+PiAvdG1wL3NldHVwLmxvZyAyPiYxCgojIENyZWF0ZSBhcHBsaWNhdGlvbiBkaXJlY3RvcnkKbWtkaXIgLXAgL3Zhci93d3cKY2hvd24gZWMyLXVzZXI6ZWMyLXVzZXIgL3Zhci93d3cKCiMgQ2xvbmUgcmVwb3NpdG9yeSAocmVwbGFjZSB3aXRoIHlvdXIgcmVwbyBVUkwpCiMgc3UgLSBlYzItdXNlciAtYyAiY2QgL3Zhci93d3cgJiYgZ2l0IGNsb25lIGh0dHBzOi8vZ2l0aHViLmNvbS95b3VydXNlci95b3VyLXJlcG8uZ2l0IHNhbXBsZS1hcHAiCgojIENyZWF0ZSBzeXN0ZW1kIHNlcnZpY2UKY2F0ID4gL2V0Yy9zeXN0ZW1kL3N5c3RlbS9zYW1wbGUtYXBwLnNlcnZpY2UgPDxFT0YKW1VuaXRdCkRlc2NyaXB0aW9uPVNhbXBsZSBBcHAgRG9ja2VyIENvbXBvc2UKUmVxdWlyZXM9ZG9ja2VyLnNlcnZpY2UKQWZ0ZXI9ZG9ja2VyLnNlcnZpY2UKCltTZXJ2aWNlXQpUeXBlPW9uZXNob3QKUmVtYWluQWZ0ZXJFeGl0PXllcwpXb3JraW5nRGlyZWN0b3J5PS92YXIvd3d3L3NhbXBsZS1hcHAKRXhlY1N0YXJ0PS91c3IvbG9jYWwvYmluL2RvY2tlci1jb21wb3NlIC1mIGRvY2tlci1jb21wb3NlLnByb2QueW1sIHVwIC1kCkV4ZWNTdG9wPS91c3IvbG9jYWwvYmluL2RvY2tlci1jb21wb3NlIC1mIGRvY2tlci1jb21wb3NlLnByb2QueW1sIGRvd24KVGltZW91dFN0YXJ0U2VjPTAKVXNlcj1lYzItdXNlcgpHcm91cD1lYzItdXNlcgoKW0luc3RhbGxdCldhbnRlZEJ5PW11bHRpLXVzZXIudGFyZ2V0CkVPRgoKc3lzdGVtY3RsIGVuYWJsZSBzYW1wbGUtYXBwLnNlcnZpY2UKCmVjaG8gIlNldHVwIGNvbXBsZXRlZCIgPj4gL3RtcC9zZXR1cC5sb2c=",
+    "BlockDeviceMappings": [
+      {
+        "DeviceName": "/dev/xvda",
+        "Ebs": {
+          "VolumeSize": 20,
+          "VolumeType": "gp3",
+          "DeleteOnTermination": true,
+          "Encrypted": true
+        }
+      }
+    ],
+    "Monitoring": {
+      "Enabled": true
+    },
+    "TagSpecifications": [
+      {
+        "ResourceType": "instance",
+        "Tags": [
+          {
+            "Key": "Name",
+            "Value": "sample-app-spot"
+          },
+          {
+            "Key": "Environment",
+            "Value": "production"
+          },
+          {
+            "Key": "Application",
+            "Value": "sample-app"
+          },
+          {
+            "Key": "LaunchType",
+            "Value": "spot"
+          }
+        ]
+      }
+    ]
+  }
+}

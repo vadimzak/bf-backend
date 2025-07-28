@@ -1,0 +1,27 @@
+{
+  "name": "bf-backend",
+  "version": "1.0.0",
+  "description": "Backend monorepo for bf project",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "libs/*"
+  ],
+  "scripts": {
+    "build": "nx run-many --target=build",
+    "serve": "nx serve",
+    "test": "nx run-many --target=test"
+  },
+  "devDependencies": {
+    "@nx/js": "21.3.8",
+    "@nx/node": "^21.3.8",
+    "@swc-node/register": "~1.9.1",
+    "@swc/core": "~1.5.7",
+    "@swc/helpers": "~0.5.11",
+    "@types/node": "18.16.9",
+    "prettier": "^2.6.2",
+    "tslib": "^2.3.0",
+    "typescript": "~5.8.2"
+  },
+  "dependencies": {}
+}

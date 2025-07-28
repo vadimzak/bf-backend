@@ -1,0 +1,29 @@
+{
+  "name": "sample-app",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/sample-app",
+  "projectType": "application",
+  "tags": [],
+  "targets": {
+    "serve": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node server.js",
+        "cwd": "apps/sample-app"
+      }
+    },
+    "dev": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "npx nodemon server.js",
+        "cwd": "apps/sample-app"
+      }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "echo 'Build completed - sample-app is ready to serve'"
+      }
+    }
+  }
+}

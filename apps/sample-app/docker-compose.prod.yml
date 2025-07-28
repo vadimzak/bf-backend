@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  sample-app:
+    build: 
+      context: .
+      target: production
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+    env_file:
+      - .env.production
+    networks:
+      - app-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+  # Scheduled tasks runner
+  cron-tasks:
+    build: 
+      context: .
+      target: production
+    restart: unless-stopped
+    command: ["node", "cron/scheduler.js"]
+    environment:
+      - NODE_ENV=production
+    env_file:
+      - .env.production
+    networks:
+      - app-network
+    depends_on:
+      - sample-app
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
+
+  # NGINX reverse proxy with SSL
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/ssl/certs:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - sample-app
+    networks:
+      - app-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Monitoring and health checks
+  watchtower:
+    image: containrrr/watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=3600
+      - WATCHTOWER_INCLUDE_STOPPED=true
+    restart: unless-stopped
+
+networks:
+  app-network:
+    driver: bridge
