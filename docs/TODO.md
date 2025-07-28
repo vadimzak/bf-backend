@@ -1,4 +1,6 @@
+- deploy
 - cleanup
+  - wrong region table
 - make sure all packages are latest version
 - security overview (incl AWS account)
 - make sure only uses bf aws profile

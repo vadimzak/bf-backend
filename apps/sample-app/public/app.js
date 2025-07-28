@@ -53,7 +53,7 @@ async function loadItems() {
                         <small>ID: ${item.id}</small>
                     </div>
                     <div class="item-actions">
-                        <button onclick="deleteItem('${item.id}')">Delete</button>
+                        <button class="delete-btn" data-item-id="${item.id}">Delete</button>
                     </div>
                 </div>
             `).join('');
@@ -138,4 +138,26 @@ async function loadApiInfo() {
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
     checkHealth();
+    
+    // Add event listeners for navigation buttons
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const section = e.target.getAttribute('data-section');
+            showSection(section);
+        });
+    });
+    
+    // Add event listener for add item button
+    const addItemBtn = document.getElementById('add-item-btn');
+    if (addItemBtn) {
+        addItemBtn.addEventListener('click', addItem);
+    }
+    
+    // Add event listener for delete buttons (using event delegation)
+    document.addEventListener('click', (e) => {
+        if (e.target.classList.contains('delete-btn')) {
+            const itemId = e.target.getAttribute('data-item-id');
+            deleteItem(itemId);
+        }
+    });
 });

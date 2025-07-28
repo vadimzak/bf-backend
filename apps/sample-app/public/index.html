@@ -4,19 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sample App - sample.vadimzak.com</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Sample NodeJS Application</h1>
+            <h1>Sample</h1>
             <p class="subtitle">Hosted on AWS at sample.vadimzak.com</p>
         </header>
 
         <nav>
-            <button class="nav-btn" onclick="showSection('home')">Home</button>
-            <button class="nav-btn" onclick="showSection('items')">Items</button>
-            <button class="nav-btn" onclick="showSection('api')">API Info</button>
+            <button class="nav-btn" data-section="home">Home</button>
+            <button class="nav-btn" data-section="items">Items</button>
+            <button class="nav-btn" data-section="api">API Info</button>
         </nav>
 
         <main>
@@ -40,7 +41,7 @@
                     <h3>Add New Item</h3>
                     <input type="text" id="item-name" placeholder="Item name">
                     <input type="text" id="item-description" placeholder="Description">
-                    <button onclick="addItem()">Add Item</button>
+                    <button id="add-item-btn">Add Item</button>
                 </div>
                 <div class="items-list" id="items-list">
                     <p>Loading items...</p>

@@ -2,12 +2,13 @@ v NodeJS
 v Express
 v AWS
 v NX
-- DynamoDB
+v DynamoDB
+v Route53
 - TypeScript
 - NGINX
 - Docker
-- Route53
 - shadcn
+- Lets Encrypt cert
 
 ? ORM?
 ? Logs?
