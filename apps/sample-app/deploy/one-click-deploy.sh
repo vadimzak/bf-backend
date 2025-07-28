@@ -214,6 +214,16 @@ pre_deployment_health_check() {
 build_local_image() {
     log_info "Building Docker image locally..."
     
+    # Detect local platform and warn if cross-building
+    LOCAL_ARCH=$(uname -m)
+    if [[ "$LOCAL_ARCH" == "arm64" ]]; then
+        log_warning "Detected ARM64 Mac - cross-building for linux/amd64 (EC2 compatibility)"
+    elif [[ "$LOCAL_ARCH" == "x86_64" ]]; then
+        log_info "Detected x86_64 architecture - building for linux/amd64"
+    else
+        log_warning "Unknown architecture: $LOCAL_ARCH - building for linux/amd64"
+    fi
+    
     # Get git hash for versioning
     GIT_HASH=$(git rev-parse --short HEAD)
     IMAGE_TAG="$IMAGE_NAME:$GIT_HASH"
@@ -221,12 +231,13 @@ build_local_image() {
     
     cd "$APP_SOURCE_DIR"
     
-    # Build the image with git hash tag
+    # Build the image with git hash tag for linux/amd64 platform
     if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "DRY RUN: Would build Docker image $IMAGE_TAG"
+        log_info "DRY RUN: Would build Docker image $IMAGE_TAG for linux/amd64"
     else
-        docker build -t "$IMAGE_TAG" -t "$IMAGE_LATEST" .
-        log_success "Built image: $IMAGE_TAG"
+        log_info "Building for linux/amd64 platform..."
+        docker build --platform linux/amd64 -t "$IMAGE_TAG" -t "$IMAGE_LATEST" .
+        log_success "Built image: $IMAGE_TAG (linux/amd64)"
     fi
     
     cd - > /dev/null
