@@ -29,6 +29,9 @@ mkdir -p "$APP_DIR/deploy"
 cp apps/sample-2/deploy/one-click-deploy.sh "$APP_DIR/deploy/"
 sed -i '' "s/sample-2/$APP_NAME/g; s/sample-2\.vadimzak\.com/$DOMAIN/g; s/3002/$PORT/g" "$APP_DIR/deploy/one-click-deploy.sh"
 
+# Create dummy nginx config (not used since we use shared nginx)
+echo "# Dummy nginx config - using shared nginx" > "$APP_DIR/deploy/nginx.prod.conf"
+
 # Copy docker-compose WITHOUT nginx (shared nginx handles routing)
 cat > "$APP_DIR/docker-compose.prod.yml" << EOF
 version: '3.8'
