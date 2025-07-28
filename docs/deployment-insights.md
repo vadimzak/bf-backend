@@ -275,6 +275,44 @@ docker logs sample-app-nginx-1 --tail 20
 - Route53 DNS (first 25 hosted zones)
 - DynamoDB free tier (25GB)
 
+## One-Click Deployment Script
+
+### **New: Automated Deployment**
+We now have a comprehensive one-click deployment script that automates the entire process:
+
+```bash
+# Simple deployment
+./apps/sample-app/deploy/one-click-deploy.sh
+
+# With custom commit message
+./apps/sample-app/deploy/one-click-deploy.sh "Fix user authentication bug"
+
+# Dry run (check what would be deployed)
+./apps/sample-app/deploy/one-click-deploy.sh --dry-run
+
+# Rollback to previous version
+./apps/sample-app/deploy/one-click-deploy.sh --rollback
+```
+
+**Features:**
+- ✅ **Pre-deployment health checks** - Ensures current deployment is stable
+- ✅ **Automatic git commit/push** - Handles uncommitted changes
+- ✅ **Zero-downtime deployment** - Rolling restart of containers
+- ✅ **Post-deployment verification** - Tests all endpoints automatically
+- ✅ **Automatic rollback** - Reverts on failure
+- ✅ **Comprehensive logging** - Color-coded status messages
+- ✅ **Safety checks** - Prevents deployment of broken code
+
+**Process:**
+1. Check prerequisites and current deployment state
+2. Run pre-deployment health check
+3. Commit and push any local changes
+4. SSH to production server and pull latest code
+5. Build new Docker images with latest code
+6. Perform rolling restart of services
+7. Run comprehensive post-deployment tests
+8. Report success or initiate rollback
+
 ## Future Deployment Automation
 
 ### 1. Infrastructure as Code
@@ -288,7 +326,7 @@ docker logs sample-app-nginx-1 --tail 20
 **NEXT STEP**: Implement GitHub Actions for:
 - Automated testing
 - Docker image building
-- Deployment to EC2
+- Calling the one-click deployment script
 - Health check verification
 
 ### 3. Monitoring & Alerting
