@@ -1,6 +1,7 @@
 - cleanup
 - add versioning and report it from the server
 - use server-core
+- zero downtime
 - streamline deployment (+ new app)
 - make sure all packages are latest version
 - security overview (incl AWS account)
