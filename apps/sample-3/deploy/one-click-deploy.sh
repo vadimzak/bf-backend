@@ -154,7 +154,11 @@ commit_and_push() {
 Co-Authored-By: Claude <noreply@anthropic.com>"
         
         log_info "Pushing to remote repository..."
-        git push origin main
+        if git remote | grep -q origin; then
+            git push origin main
+        else
+            log_warning "No remote repository configured, skipping git push"
+        fi
         
         log_success "Code committed and pushed"
     else
