@@ -40,6 +40,7 @@ OPTIONS:
     --dry-run       Show what would be deployed without making changes
     --rollback      Rollback to previous deployment
     --force         Skip safety checks and deploy anyway
+    --update-nginx  Force update nginx configuration with SSL enabled
     --help          Show this help message
 
 EXAMPLES:
@@ -47,6 +48,7 @@ EXAMPLES:
     $0 "Fix user authentication bug"    # Deploy with custom commit message
     $0 --dry-run                        # Check what would be deployed
     $0 --rollback                       # Rollback to previous version
+    $0 --update-nginx                   # Update nginx config and deploy
 
 EOF
 }
@@ -55,6 +57,7 @@ EOF
 DRY_RUN=false
 ROLLBACK=false
 FORCE=false
+UPDATE_NGINX=false
 COMMIT_MESSAGE=""
 
 while [[ $# -gt 0 ]]; do
@@ -69,6 +72,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --force)
             FORCE=true
+            shift
+            ;;
+        --update-nginx)
+            UPDATE_NGINX=true
             shift
             ;;
         --help|-h)
@@ -298,15 +305,27 @@ setup_remote_environment() {
     ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" \
         "sudo mkdir -p $APP_DIR/deploy && sudo chown -R ec2-user:ec2-user $APP_DIR"
     
-    # Transfer docker-compose.prod.yml
+    # Transfer docker-compose.prod.yml (always update)
     scp -i "$SSH_KEY" -o StrictHostKeyChecking=no \
         "$APP_SOURCE_DIR/docker-compose.prod.yml" \
         "$REMOTE_USER@$REMOTE_HOST:$APP_DIR/"
     
-    # Transfer nginx configuration
-    scp -i "$SSH_KEY" -o StrictHostKeyChecking=no \
-        "$APP_SOURCE_DIR/deploy/nginx.conf" \
-        "$REMOTE_USER@$REMOTE_HOST:$APP_DIR/deploy/"
+    # Check if nginx configuration already exists (preserve SSL config)
+    NGINX_EXISTS=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" \
+        "test -f $APP_DIR/deploy/nginx.conf && echo 'exists' || echo 'missing'")
+    
+    if [[ "$NGINX_EXISTS" == "missing" ]] || [[ "$UPDATE_NGINX" == "true" ]]; then
+        if [[ "$UPDATE_NGINX" == "true" ]]; then
+            log_info "Force updating nginx configuration with production SSL config"
+        else
+            log_info "Nginx config missing - transferring production SSL configuration"
+        fi
+        scp -i "$SSH_KEY" -o StrictHostKeyChecking=no \
+            "$APP_SOURCE_DIR/deploy/nginx.prod.conf" \
+            "$REMOTE_USER@$REMOTE_HOST:$APP_DIR/deploy/nginx.conf"
+    else
+        log_info "Nginx config exists - preserving current SSL configuration"
+    fi
     
     log_success "Remote environment setup completed"
 }
