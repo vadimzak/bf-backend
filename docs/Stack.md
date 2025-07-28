@@ -7,6 +7,10 @@ v NX
 - NGINX
 - Docker
 - Route53
+- shadcn
+
+? ORM?
+? Logs?
 
 v Claude Code
 v Context7 CMP
@@ -15,3 +19,4 @@ v Context7 CMP
 - GitHub Action deployment?
 - Prettier?
 - CDK?
+- Docker Repository?

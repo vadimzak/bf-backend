@@ -60,4 +60,4 @@ jspm_packages/
 
 
 .cursor/rules/nx-rules.mdc
-.github/instructions/nx.instructions.md
+.github/instructions/nx.instructions.md*.tar.gz
