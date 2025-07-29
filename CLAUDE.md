@@ -122,12 +122,15 @@ All infrastructure scripts are located in the `scripts/` directory:
 
 #### Core Scripts
 - **`scripts/add-new-app.sh`** - Creates new applications with complete structure
+- **`scripts/prep-app-infra.sh`** - Prepares cloud infrastructure (DNS, nginx) for existing apps
 - **`scripts/deploy-app.sh`** - Universal deployment script for all apps
 - **`scripts/remove-app.sh`** - Removes apps from repository and production
 - **`scripts/lib/deploy-common.sh`** - Shared deployment functions and utilities
 - **`scripts/renew-wildcard-cert.sh`** - Renews the wildcard SSL certificate
 
 ### Adding New Apps
+
+#### Option 1: Full App Creation
 ```bash
 ./scripts/add-new-app.sh my-new-app
 ```
@@ -140,6 +143,22 @@ This script automatically:
 - Creates DNS A record pointing to the EC2 instance
 - Updates nginx configuration for routing
 - Generates deployment configuration (`deploy.config`)
+
+#### Option 2: Infrastructure Setup for Existing Apps
+If you've created app files manually or copied from another app:
+```bash
+./scripts/prep-app-infra.sh my-existing-app [--deploy]
+```
+This script:
+- Reads configuration from existing `deploy.config`
+- Creates DNS A record pointing to the EC2 instance
+- Updates nginx configuration for routing
+- Restarts nginx automatically
+- Optionally deploys the app with `--deploy` flag
+
+**Requirements for prep-app-infra.sh:**
+- App directory must exist at `apps/app-name/`
+- `deploy.config` must exist with `APP_PORT` and `APP_DOMAIN` defined
 
 ### Deploying Apps
 All apps use the unified deployment system:
