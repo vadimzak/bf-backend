@@ -1,38 +1,352 @@
 #!/bin/bash
-
-# Simple script to make an existing app deployable
-# Sets up DNS subdomain, deployment files, and handles multi-app nginx routing
+# Streamlined script to add a new app to the monorepo
+# Usage: ./scripts/add-new-app.sh <app-name>
 
 set -e
 
-APP_NAME="$1"
-DOMAIN="${2:-$APP_NAME.vadimzak.com}"
+APP_NAME=$1
 
-if [[ -z "$APP_NAME" || ! -d "apps/$APP_NAME" ]]; then
-    echo "Usage: $0 <app-name> [domain]"
-    echo "Example: $0 blog [blog.vadimzak.com]"
+if [ -z "$APP_NAME" ]; then
+    echo "Usage: $0 <app-name>"
+    echo "Example: $0 my-new-app"
     exit 1
 fi
 
+# Configuration
+DOMAIN="$APP_NAME.vadimzak.com"
 APP_DIR="apps/$APP_NAME"
 
-# Detect port from app
-PORT=$(grep -o "30[0-9][0-9]" "$APP_DIR"/{package.json,server.js,.env*} 2>/dev/null | head -1 | grep -o "30[0-9][0-9]")
-PORT=${PORT:-$((3000 + $(find apps/ -maxdepth 1 -type d | wc -l)))}
+# Find next available port
+USED_PORTS=$(grep -h "APP_PORT=" apps/*/deploy.config 2>/dev/null | cut -d= -f2 | sort -n)
+LAST_PORT=$(echo "$USED_PORTS" | tail -1)
+PORT=$((LAST_PORT + 1))
+if [ $PORT -lt 3001 ]; then PORT=3001; fi
 
-echo "Setting up $APP_NAME on $DOMAIN:$PORT"
+echo "🚀 Setting up new app: $APP_NAME"
+echo "📍 Domain: $DOMAIN"
+echo "🔌 Port: $PORT"
+echo
 
-# Create deployment files
-mkdir -p "$APP_DIR/deploy"
+# Create app directory structure
+echo "Creating app structure..."
+mkdir -p "$APP_DIR"/{public,deploy}
 
-# Copy and customize deployment script
-cp apps/sample-2/deploy/one-click-deploy.sh "$APP_DIR/deploy/"
-sed -i '' "s/sample-2/$APP_NAME/g; s/sample-2\.vadimzak\.com/$DOMAIN/g; s/3002/$PORT/g" "$APP_DIR/deploy/one-click-deploy.sh"
+# Create package.json
+cat > "$APP_DIR/package.json" << EOF
+{
+  "name": "$APP_NAME",
+  "version": "1.0.0",
+  "description": "$APP_NAME NodeJS app for $DOMAIN",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["nodejs", "express"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.18.2",
+    "dotenv": "^16.0.3",
+    "cors": "^2.8.5",
+    "helmet": "^7.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.22"
+  }
+}
+EOF
 
-# Create dummy nginx config (not used since we use shared nginx)
-echo "# Dummy nginx config - using shared nginx" > "$APP_DIR/deploy/nginx.prod.conf"
+# Create minimal server.js
+cat > "$APP_DIR/server.js" << EOF
+const express = require('express');
+const helmet = require('helmet');
+const cors = require('cors');
+const path = require('path');
+require('dotenv').config();
 
-# Copy docker-compose WITHOUT nginx (shared nginx handles routing)
+const app = express();
+const PORT = process.env.PORT || $PORT;
+
+// Middleware
+app.use(helmet());
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static('public'));
+
+// Home route
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'healthy',
+    service: '$APP_NAME',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ error: 'Something went wrong!' });
+});
+
+// Start server
+app.listen(PORT, () => {
+  console.log(\`$APP_NAME app listening on port \${PORT}\`);
+  console.log(\`Environment: \${process.env.NODE_ENV || 'development'}\`);
+});
+EOF
+
+# Create minimal HTML page
+cat > "$APP_DIR/public/index.html" << 'EOF'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>APP_NAME</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>APP_NAME Application</h1>
+            <p class="subtitle">A minimal demo page</p>
+        </header>
+        
+        <main>
+            <div class="card">
+                <h2>Welcome to APP_NAME</h2>
+                <p>This app is deployed on AWS infrastructure.</p>
+                <button id="statusBtn" class="btn">Check Status</button>
+                <div id="status" class="status"></div>
+            </div>
+        </main>
+        
+        <footer>
+            <p>&copy; 2025 APP_NAME | <a href="/health">Health Check</a></p>
+        </footer>
+    </div>
+    
+    <script src="app.js"></script>
+</body>
+</html>
+EOF
+
+# Replace APP_NAME in HTML
+sed -i '' "s/APP_NAME/$APP_NAME/g" "$APP_DIR/public/index.html"
+
+# Create CSS
+cat > "$APP_DIR/public/styles.css" << 'EOF'
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    line-height: 1.6;
+    color: #333;
+    background-color: #f4f4f4;
+}
+
+.container {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+header {
+    background-color: #2c3e50;
+    color: white;
+    text-align: center;
+    padding: 2rem;
+}
+
+header h1 {
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.subtitle {
+    font-size: 1.2rem;
+    opacity: 0.9;
+}
+
+main {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+}
+
+.card {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    padding: 2rem;
+    max-width: 600px;
+    width: 100%;
+}
+
+.card h2 {
+    color: #2c3e50;
+    margin-bottom: 1rem;
+}
+
+.btn {
+    background-color: #3498db;
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-top: 1rem;
+    transition: background-color 0.3s;
+}
+
+.btn:hover {
+    background-color: #2980b9;
+}
+
+.status {
+    margin-top: 1rem;
+    padding: 1rem;
+    border-radius: 4px;
+    display: none;
+}
+
+.status.success {
+    background-color: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+    display: block;
+}
+
+.status.error {
+    background-color: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+    display: block;
+}
+
+footer {
+    background-color: #34495e;
+    color: white;
+    text-align: center;
+    padding: 1rem;
+}
+
+footer a {
+    color: #3498db;
+    text-decoration: none;
+}
+
+footer a:hover {
+    text-decoration: underline;
+}
+EOF
+
+# Create JavaScript
+cat > "$APP_DIR/public/app.js" << 'EOF'
+document.getElementById('statusBtn').addEventListener('click', async () => {
+    const statusDiv = document.getElementById('status');
+    const btn = document.getElementById('statusBtn');
+    
+    btn.disabled = true;
+    btn.textContent = 'Checking...';
+    
+    try {
+        const response = await fetch('/health');
+        const data = await response.json();
+        
+        statusDiv.className = 'status success';
+        statusDiv.innerHTML = `
+            <strong>✅ Service is healthy!</strong><br>
+            Service: ${data.service}<br>
+            Status: ${data.status}<br>
+            Time: ${new Date(data.timestamp).toLocaleString()}
+        `;
+    } catch (error) {
+        statusDiv.className = 'status error';
+        statusDiv.innerHTML = `
+            <strong>❌ Error checking status</strong><br>
+            ${error.message}
+        `;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Check Status';
+    }
+});
+EOF
+
+# Create environment files
+cat > "$APP_DIR/.env.example" << EOF
+# $APP_NAME Application Environment Variables
+
+# Server Configuration
+PORT=$PORT
+NODE_ENV=development
+
+# Domain Configuration (for deployment)
+DOMAIN=$DOMAIN
+EOF
+
+cat > "$APP_DIR/.env.production" << EOF
+# Production Environment Variables for $APP_NAME
+NODE_ENV=production
+PORT=$PORT
+DOMAIN=$DOMAIN
+EOF
+
+# Create Dockerfile
+cat > "$APP_DIR/Dockerfile" << 'EOF'
+FROM node:18-alpine
+
+# Create app directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install production dependencies
+RUN npm install --only=production
+
+# Copy app source
+COPY . .
+
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs
+RUN adduser -S nextjs -u 1001
+RUN chown -R nextjs:nodejs /app
+
+# Switch to non-root user
+USER nextjs
+
+# Expose port
+EXPOSE APP_PORT
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:APP_PORT/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1); })"
+
+# Start the application
+CMD ["node", "server.js"]
+EOF
+
+# Replace APP_PORT in Dockerfile
+sed -i '' "s/APP_PORT/$PORT/g" "$APP_DIR/Dockerfile"
+
+# Create docker-compose.prod.yml
 cat > "$APP_DIR/docker-compose.prod.yml" << EOF
 version: '3.8'
 
@@ -44,22 +358,16 @@ services:
       - "$PORT:$PORT"
     environment:
       - NODE_ENV=production
-      - PORT=$PORT
     env_file:
       - .env.production
     networks:
       - app-network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-        reservations:
-          memory: 128M
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:$PORT/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1); })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
 networks:
   app-network:
@@ -67,38 +375,51 @@ networks:
     name: sample-app_app-network
 EOF
 
-# Create .env.production if missing
-[[ ! -f "$APP_DIR/.env.production" ]] && echo -e "NODE_ENV=production\nPORT=$PORT\nDOMAIN=$DOMAIN" > "$APP_DIR/.env.production"
+# Create deployment configuration
+cat > "$APP_DIR/deploy.config" << EOF
+# Deployment configuration for $APP_NAME
+APP_PORT=$PORT
+APP_DOMAIN=$DOMAIN
+EOF
 
-# Set up DNS subdomain
-EC2_IP=$(ssh -i ~/.ssh/sample-app-key.pem -o ConnectTimeout=5 ec2-user@sample.vadimzak.com "curl -s http://169.254.169.254/latest/meta-data/public-ipv4" 2>/dev/null)
-if [[ -n "$EC2_IP" ]]; then
-    echo "Creating DNS: $DOMAIN -> $EC2_IP"
-    aws route53 change-resource-record-sets --profile bf --hosted-zone-id Z2O129XK0SJBV9 --change-batch "{\"Changes\":[{\"Action\":\"UPSERT\",\"ResourceRecordSet\":{\"Name\":\"$DOMAIN\",\"Type\":\"A\",\"TTL\":300,\"ResourceRecords\":[{\"Value\":\"$EC2_IP\"}]}}]}" >/dev/null
-else
-    echo "⚠️  Could not get EC2 IP. Set up DNS manually: $DOMAIN -> your-ec2-ip"
-fi
+# Create simplified deployment wrapper
+cat > "$APP_DIR/deploy.sh" << EOF
+#!/bin/bash
+# Deploy $APP_NAME
+# This is a convenience wrapper for the main deployment script
 
-# Update SSL certificate to include new domain
-echo "Adding $DOMAIN to SSL certificate..."
-ssh -i ~/.ssh/sample-app-key.pem ec2-user@sample.vadimzak.com "cd /var/www/sample-app && sudo docker-compose -f docker-compose.prod.yml stop nginx" 2>/dev/null || true
+# Change to project root
+cd "\$(dirname "\$0")/../.."
 
-# Get current domains from certificate
-CURRENT_DOMAINS=$(ssh -i ~/.ssh/sample-app-key.pem ec2-user@sample.vadimzak.com "sudo openssl x509 -in /var/www/ssl/fullchain.pem -text -noout | grep -A1 'Subject Alternative Name' | tail -1 | sed 's/.*DNS://g' | sed 's/, DNS:/ -d /g'" 2>/dev/null)
+# Run the deployment
+./scripts/deploy-app.sh $APP_NAME "\$@"
+EOF
 
-# Add new domain to certificate
-ssh -i ~/.ssh/sample-app-key.pem ec2-user@sample.vadimzak.com "sudo /usr/local/bin/certbot certonly --standalone -d $CURRENT_DOMAINS -d $DOMAIN --expand --agree-tos --email vadim@vadimzak.com --non-interactive" 2>/dev/null || echo "⚠️  SSL expansion failed - you may need to add $DOMAIN manually"
+chmod +x "$APP_DIR/deploy.sh"
 
-# Copy new certificate
-ssh -i ~/.ssh/sample-app-key.pem ec2-user@sample.vadimzak.com "sudo cp /etc/letsencrypt/live/sample.vadimzak.com/fullchain.pem /var/www/ssl/ && sudo cp /etc/letsencrypt/live/sample.vadimzak.com/privkey.pem /var/www/ssl/" 2>/dev/null || true
+# Create DNS record
+echo "Creating DNS record..."
+aws route53 change-resource-record-sets \
+  --hosted-zone-id Z2O129XK0SJBV9 \
+  --change-batch '{
+    "Changes": [{
+      "Action": "CREATE",
+      "ResourceRecordSet": {
+        "Name": "'$DOMAIN'",
+        "Type": "A",
+        "TTL": 300,
+        "ResourceRecords": [{"Value": "51.16.33.8"}]
+      }
+    }]
+  }' > /dev/null 2>&1 || echo "⚠️  DNS record may already exist"
 
-# Update nginx configuration to handle multiple domains
+# Update nginx configuration
 echo "Updating nginx configuration for multi-app routing..."
-NGINX_CONFIG=$(ssh -i ~/.ssh/sample-app-key.pem ec2-user@sample.vadimzak.com "cat /var/www/sample-app/deploy/nginx.conf")
+NGINX_CONFIG="/tmp/nginx.conf.new"
+ssh -i ~/.ssh/sample-app-key.pem ec2-user@sample.vadimzak.com "cat /var/www/sample-app/deploy/nginx.conf" > "$NGINX_CONFIG"
 
-# Add new domain configuration if not already present
-if ! echo "$NGINX_CONFIG" | grep -q "server_name $DOMAIN"; then
-    cat > /tmp/new-domain-config << EOF
+# Add new app configuration to nginx
+cat >> "$NGINX_CONFIG" << EOF
 
 # $APP_NAME App Configuration
 server {
@@ -141,22 +462,19 @@ server {
 }
 EOF
 
-    # Append new configuration to existing nginx config
-    scp -i ~/.ssh/sample-app-key.pem /tmp/new-domain-config ec2-user@sample.vadimzak.com:/tmp/
-    ssh -i ~/.ssh/sample-app-key.pem ec2-user@sample.vadimzak.com "cat /tmp/new-domain-config >> /var/www/sample-app/deploy/nginx.conf"
-    rm /tmp/new-domain-config
-fi
+# Upload updated nginx config
+scp -i ~/.ssh/sample-app-key.pem "$NGINX_CONFIG" ec2-user@sample.vadimzak.com:/tmp/nginx.conf.new
+ssh -i ~/.ssh/sample-app-key.pem ec2-user@sample.vadimzak.com "sudo cp /tmp/nginx.conf.new /var/www/sample-app/deploy/nginx.conf"
+rm -f "$NGINX_CONFIG"
 
-# Start nginx
-ssh -i ~/.ssh/sample-app-key.pem ec2-user@sample.vadimzak.com "cd /var/www/sample-app && sudo docker-compose -f docker-compose.prod.yml start nginx" 2>/dev/null || true
-
-echo "✅ Infrastructure setup complete!"
-echo ""
+echo "✅ App setup complete!"
+echo
 echo "Next steps:"
-echo "1. Deploy your app: cd $APP_DIR && ./deploy/one-click-deploy.sh"
-echo "2. After deployment, connect to shared network:"
-echo "   ssh -i ~/.ssh/sample-app-key.pem ec2-user@sample.vadimzak.com 'sudo docker network connect sample-app_app-network $APP_NAME-$APP_NAME-1'"
-echo "3. Restart nginx to reload config:"
+echo "1. Deploy your app: cd $APP_DIR && ./deploy.sh"
+echo "2. After deployment, the app will be automatically connected to the shared network"
+echo "3. Restart nginx to load the new configuration:"
 echo "   ssh -i ~/.ssh/sample-app-key.pem ec2-user@sample.vadimzak.com 'cd /var/www/sample-app && sudo docker-compose -f docker-compose.prod.yml restart nginx'"
-echo ""
+echo
 echo "🌐 Your app will be available at: https://$DOMAIN"
+echo
+echo "Note: The wildcard SSL certificate (*.vadimzak.com) already covers this domain!"

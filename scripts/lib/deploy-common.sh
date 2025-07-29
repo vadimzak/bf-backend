@@ -1,19 +1,6 @@
 #!/bin/bash
-
-# One-Click Deployment Script for Sample-2 App
-# Automates the entire deployment process with safety checks and rollback capability
-
-set -e  # Exit on any error
-
-# Configuration
-REMOTE_HOST="sample-3.vadimzak.com"
-REMOTE_USER="ec2-user"
-SSH_KEY="$HOME/.ssh/sample-app-key.pem"
-APP_DIR="/var/www/sample-3"
-COMPOSE_FILE="docker-compose.prod.yml"
-HEALTH_ENDPOINT="https://sample-3.vadimzak.com/health"
-IMAGE_NAME="sample-3"
-APP_SOURCE_DIR="apps/sample-3"
+# Common deployment functions for all apps
+# This file should be sourced by app-specific deployment scripts
 
 # Colors for output
 RED='\033[0;31m'
@@ -22,73 +9,18 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Common configuration
+REMOTE_USER="ec2-user"
+SSH_KEY="$HOME/.ssh/sample-app-key.pem"
+SHARED_NETWORK="sample-app_app-network"
+
 # Logging functions
 log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 log_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
-# Help function
-show_help() {
-    cat << EOF
-Usage: $0 [OPTIONS] [COMMIT_MESSAGE]
-
-Deploy sample-3 app to production with automated safety checks.
-
-OPTIONS:
-    --dry-run       Show what would be deployed without making changes
-    --rollback      Rollback to previous deployment
-    --force         Skip safety checks and deploy anyway
-    --update-nginx  Force update nginx configuration with SSL enabled
-    --help          Show this help message
-
-EXAMPLES:
-    $0                                  # Deploy with auto-generated commit message
-    $0 "Fix user interface bug"         # Deploy with custom commit message
-    $0 --dry-run                        # Check what would be deployed
-    $0 --rollback                       # Rollback to previous version
-    $0 --update-nginx                   # Update nginx config and deploy
-
-EOF
-}
-
-# Parse command line arguments
-DRY_RUN=false
-ROLLBACK=false
-FORCE=false
-UPDATE_NGINX=false
-COMMIT_MESSAGE=""
-
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --dry-run)
-            DRY_RUN=true
-            shift
-            ;;
-        --rollback)
-            ROLLBACK=true
-            shift
-            ;;
-        --force)
-            FORCE=true
-            shift
-            ;;
-        --update-nginx)
-            UPDATE_NGINX=true
-            shift
-            ;;
-        --help|-h)
-            show_help
-            exit 0
-            ;;
-        *)
-            COMMIT_MESSAGE="$1"
-            shift
-            ;;
-    esac
-done
-
-# Check prerequisites
+# Check prerequisites common to all deployments
 check_prerequisites() {
     log_info "Checking prerequisites..."
     
@@ -143,7 +75,7 @@ commit_and_push() {
         log_info "Committing local changes..."
         
         if [[ -z "$COMMIT_MESSAGE" ]]; then
-            COMMIT_MESSAGE="Deploy sample-3: $(date '+%Y-%m-%d %H:%M:%S')"
+            COMMIT_MESSAGE="Deploy $APP_NAME: $(date '+%Y-%m-%d %H:%M:%S')"
         fi
         
         git add .
@@ -160,7 +92,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>"
             log_warning "No remote repository configured, skipping git push"
         fi
         
-        log_success "Code committed and pushed"
+        log_success "Code committed"
     else
         log_info "No local changes to commit"
     fi
@@ -313,21 +245,13 @@ setup_remote_environment() {
         "$APP_SOURCE_DIR/docker-compose.prod.yml" \
         "$REMOTE_USER@$REMOTE_HOST:$APP_DIR/"
     
-    # Check if nginx configuration already exists (preserve SSL config)
-    NGINX_EXISTS=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" \
-        "test -f $APP_DIR/deploy/nginx.conf && echo 'exists' || echo 'missing'")
-    
-    if [[ "$NGINX_EXISTS" == "missing" ]] || [[ "$UPDATE_NGINX" == "true" ]]; then
-        if [[ "$UPDATE_NGINX" == "true" ]]; then
-            log_info "Force updating nginx configuration with production SSL config"
-        else
-            log_info "Nginx config missing - transferring production SSL configuration"
+    # Create .env.production if it doesn't exist
+    if ! ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" "test -f $APP_DIR/.env.production"; then
+        if [[ -f "$APP_SOURCE_DIR/.env.production" ]]; then
+            scp -i "$SSH_KEY" -o StrictHostKeyChecking=no \
+                "$APP_SOURCE_DIR/.env.production" \
+                "$REMOTE_USER@$REMOTE_HOST:$APP_DIR/"
         fi
-        scp -i "$SSH_KEY" -o StrictHostKeyChecking=no \
-            "$APP_SOURCE_DIR/deploy/nginx.prod.conf" \
-            "$REMOTE_USER@$REMOTE_HOST:$APP_DIR/deploy/nginx.conf"
-    else
-        log_info "Nginx config exists - preserving current SSL configuration"
     fi
     
     log_success "Remote environment setup completed"
@@ -343,44 +267,46 @@ deploy_to_remote() {
     fi
     
     # Create deployment script for remote execution
-    cat > /tmp/deploy_commands.sh << 'EOF'
+    cat > /tmp/deploy_commands.sh << EOF
 #!/bin/bash
 set -e
 
-APP_DIR="/var/www/sample-3"
-COMPOSE_FILE="docker-compose.prod.yml"
+APP_DIR="$APP_DIR"
+COMPOSE_FILE="$COMPOSE_FILE"
+APP_NAME="$APP_NAME"
+CONTAINER_NAME="${APP_NAME}-${APP_NAME}-1"
 
-cd $APP_DIR
+cd \$APP_DIR
 
 # Create backup of current containers
 echo "Creating backup of current containers..."
-sudo docker-compose -f $COMPOSE_FILE ps --format 'table {{.Service}}\t{{.Image}}\t{{.Status}}' > deployment_backup.txt
-echo "$(date): Pre-deployment backup created" >> deployment.log
+sudo docker-compose -f \$COMPOSE_FILE ps --format 'table {{.Service}}\t{{.Image}}\t{{.Status}}' > deployment_backup.txt
+echo "\$(date): Pre-deployment backup created" >> deployment.log
 
-# Rolling restart - start with app containers, then nginx
-echo "Performing rolling restart..."
-
-# Stop and start sample-3 service
-sudo docker-compose -f $COMPOSE_FILE stop sample-3
-sudo docker-compose -f $COMPOSE_FILE up -d sample-3
+# Stop and start app service
+echo "Performing deployment..."
+sudo docker-compose -f \$COMPOSE_FILE stop \$APP_NAME
+sudo docker-compose -f \$COMPOSE_FILE up -d \$APP_NAME
 
 # Wait for app to be healthy
 echo "Waiting for application to start..."
 sleep 10
 
 # Check if app container is healthy
-if sudo docker ps | grep -q "sample-3.*healthy"; then
+if sudo docker ps | grep -q "\$CONTAINER_NAME.*healthy"; then
     echo "Application container is healthy"
 else
     echo "Warning: Application container may not be healthy"
 fi
 
-# Finally restart nginx (minimal downtime)
-sudo docker-compose -f $COMPOSE_FILE stop nginx
-sudo docker-compose -f $COMPOSE_FILE up -d nginx
+# Ensure container is connected to shared network
+if ! sudo docker network inspect $SHARED_NETWORK | grep -q "\$CONTAINER_NAME"; then
+    echo "Connecting to shared network..."
+    sudo docker network connect $SHARED_NETWORK \$CONTAINER_NAME || true
+fi
 
 echo "Deployment completed successfully"
-echo "$(date): Deployment completed" >> deployment.log
+echo "\$(date): Deployment completed" >> deployment.log
 EOF
 
     # Copy and execute deployment script on remote server
@@ -411,7 +337,7 @@ post_deployment_health_check() {
     
     # Test HTTPS redirect
     log_info "Testing HTTPS redirect..."
-    if curl -s --max-time 10 -I "http://sample-3.vadimzak.com" | grep -q "301"; then
+    if curl -s --max-time 10 -I "http://$REMOTE_HOST" | grep -q "301"; then
         log_success "✅ HTTPS redirect: PASSED"
     else
         log_error "❌ HTTPS redirect: FAILED"
@@ -460,7 +386,7 @@ rollback_deployment() {
     log_info "Rolling back to image: $IMAGE_NAME:$ROLLBACK_TAG"
     
     ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" << EOF
-cd /var/www/sample-3
+cd $APP_DIR
 
 # Tag the rollback image as latest
 sudo docker tag $IMAGE_NAME:$ROLLBACK_TAG $IMAGE_NAME:latest
@@ -494,79 +420,18 @@ cleanup_old_images() {
     fi
     
     # Clean up remote images (keep latest 3)
-    ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" << 'EOF'
-OLD_REMOTE_IMAGES=$(sudo docker images sample-3 --format "{{.Tag}}" | grep -v latest | tail -n +4)
-if [[ -n "$OLD_REMOTE_IMAGES" ]]; then
+    ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" << EOF
+OLD_REMOTE_IMAGES=\$(sudo docker images $IMAGE_NAME --format "{{.Tag}}" | grep -v latest | tail -n +4)
+if [[ -n "\$OLD_REMOTE_IMAGES" ]]; then
     echo "Removing old remote images..."
-    echo "$OLD_REMOTE_IMAGES" | while read tag; do
-        sudo docker rmi sample-3:$tag 2>/dev/null || true
+    echo "\$OLD_REMOTE_IMAGES" | while read tag; do
+        sudo docker rmi $IMAGE_NAME:\$tag 2>/dev/null || true
     done
 fi
 
 # Clean up old compressed image files
-sudo rm -f /tmp/sample-3-*.tar.gz
+sudo rm -f /tmp/$IMAGE_NAME-*.tar.gz
 EOF
     
     log_success "Image cleanup completed"
 }
-
-# Main deployment flow
-main() {
-    echo "🚀 Sample-2 App One-Click Deployment"
-    echo "===================================="
-    echo
-    
-    if [[ "$ROLLBACK" == "true" ]]; then
-        rollback_deployment
-        exit 0
-    fi
-    
-    # Show current state
-    get_deployment_state
-    
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "DRY RUN MODE - No changes will be made"
-        echo
-    fi
-    
-    # Run deployment steps
-    check_prerequisites
-    
-    if [[ "$DRY_RUN" == "false" ]]; then
-        if [[ "$FORCE" == "false" ]]; then
-            pre_deployment_health_check
-        fi
-        commit_and_push
-    fi
-    
-    build_local_image
-    setup_remote_environment
-    transfer_image
-    deploy_to_remote
-    
-    if [[ "$DRY_RUN" == "false" ]]; then
-        if post_deployment_health_check; then
-            cleanup_old_images
-            log_success "🎉 Deployment completed successfully!"
-            echo
-            echo "Application is running at: https://sample-3.vadimzak.com"
-            echo "Health check: $HEALTH_ENDPOINT"
-        else
-            log_error "❌ Post-deployment health checks failed!"
-            echo
-            read -p "Would you like to rollback? [Y/n]: " -n 1 -r
-            echo
-            if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
-                rollback_deployment
-                log_info "Please investigate the deployment issues and try again"
-            fi
-            exit 1
-        fi
-    else
-        log_info "DRY RUN completed - use without --dry-run to execute deployment"
-        cleanup_old_images
-    fi
-}
-
-# Run main function
-main "$@"

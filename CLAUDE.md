@@ -155,5 +155,55 @@ npm install [package-name]
 - Always use the one-click deployment script for production deployments
 - Deployment includes automatic health checks and rollback on failure
 - Cost-optimized using AWS spot instances (~$2-4/month)
-- SSL certificates auto-renew via Let's Encrypt
+- Wildcard SSL certificate (*.vadimzak.com) covers all subdomains - no downtime for new apps
 - Zero-downtime deployments with rolling updates
+
+## Streamlined Architecture
+
+### Adding New Apps
+```bash
+./scripts/add-new-app.sh my-new-app
+```
+This creates a complete app structure with minimal boilerplate.
+
+### Deploying Apps
+All apps use the same deployment system:
+```bash
+# From project root
+./scripts/deploy-app.sh app-name
+
+# Or from app directory
+cd apps/app-name
+./deploy.sh
+```
+
+### App Configuration
+Each app has a simple `deploy.config` file:
+```bash
+APP_PORT=3004
+APP_DOMAIN=my-app.vadimzak.com
+```
+
+### Shared Infrastructure
+- All deployment logic is in `scripts/lib/deploy-common.sh`
+- Wildcard SSL certificate covers all subdomains
+- Shared nginx configuration with automatic routing
+- Docker network connectivity handled automatically
+
+## SSL Certificate Management
+
+### Wildcard Certificate Setup
+The infrastructure uses a single wildcard certificate (*.vadimzak.com) that covers all subdomains:
+- Certificate location: `/var/www/ssl/`
+- Managed by certbot with Route53 DNS validation
+- Auto-renewal configured via certbot
+- No need to update certificates when adding new apps
+
+### Certificate Renewal
+Run the renewal script manually or set up a cron job:
+```bash
+./scripts/renew-wildcard-cert.sh
+```
+
+### Important: Never expand certificates for individual subdomains
+All apps use the same wildcard certificate to avoid downtime when adding new apps.
