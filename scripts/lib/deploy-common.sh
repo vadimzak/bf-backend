@@ -305,12 +305,24 @@ NGINX_CONFIG="/var/www/sample-app/deploy/nginx.conf"
 cd \$APP_DIR
 
 # Determine current deployment color
+# Check for both explicit color names and default docker-compose names
 if sudo docker ps --format "{{.Names}}" | grep -q "\${APP_NAME}-blue"; then
     CURRENT_COLOR="blue"
     NEW_COLOR="green"
-else
+elif sudo docker ps --format "{{.Names}}" | grep -q "\${APP_NAME}-green"; then
     CURRENT_COLOR="green"
     NEW_COLOR="blue"
+else
+    # No color-based containers found, check for default names
+    if sudo docker ps --format "{{.Names}}" | grep -q "\${APP_NAME}-\${APP_NAME}-"; then
+        # Default docker-compose naming detected, start with blue
+        CURRENT_COLOR="none"
+        NEW_COLOR="blue"
+    else
+        # No containers found, start with blue
+        CURRENT_COLOR="none"
+        NEW_COLOR="blue"
+    fi
 fi
 
 echo "Current deployment: \$CURRENT_COLOR"
@@ -431,10 +443,15 @@ done
 
 # Update nginx to point to new containers
 echo "Updating nginx configuration..."
-# Handle both explicit container names and docker-compose default names
-sudo sed -i "s/\${APP_NAME}-\${CURRENT_COLOR}:\${APP_PORT}/\${APP_NAME}-\${NEW_COLOR}:\${APP_PORT}/g" \$NGINX_CONFIG
-sudo sed -i "s/\${APP_NAME}-\${APP_NAME}-[0-9]*:\${APP_PORT}/\${APP_NAME}-\${NEW_COLOR}:\${APP_PORT}/g" \$NGINX_CONFIG
-sudo sed -i "s/\${APP_NAME}-cron-\${CURRENT_COLOR}/\${APP_NAME}-cron-\${NEW_COLOR}/g" \$NGINX_CONFIG
+if [ "\$CURRENT_COLOR" = "none" ]; then
+    # Replace default docker-compose names with color-based names
+    sudo sed -i "s/\${APP_NAME}-\${APP_NAME}-[0-9]*:\${APP_PORT}/\${APP_NAME}-\${NEW_COLOR}:\${APP_PORT}/g" \$NGINX_CONFIG
+    sudo sed -i "s/\${APP_NAME}-cron-tasks-[0-9]*/\${APP_NAME}-cron-\${NEW_COLOR}/g" \$NGINX_CONFIG
+else
+    # Replace color-based names
+    sudo sed -i "s/\${APP_NAME}-\${CURRENT_COLOR}:\${APP_PORT}/\${APP_NAME}-\${NEW_COLOR}:\${APP_PORT}/g" \$NGINX_CONFIG
+    sudo sed -i "s/\${APP_NAME}-cron-\${CURRENT_COLOR}/\${APP_NAME}-cron-\${NEW_COLOR}/g" \$NGINX_CONFIG
+fi
 
 # Reload nginx configuration (zero downtime)
 echo "Reloading nginx configuration..."
@@ -444,8 +461,13 @@ cd /var/www/sample-app && sudo docker-compose -f docker-compose-infra.yml exec -
 sleep 5
 
 # Stop old containers
-echo "Stopping \$CURRENT_COLOR containers..."
-if [ -f "docker-compose.\${CURRENT_COLOR}.yml" ]; then
+echo "Stopping old containers..."
+if [ "\$CURRENT_COLOR" = "none" ]; then
+    # Stop default-named containers
+    echo "Stopping default-named containers..."
+    sudo docker-compose -f \$COMPOSE_FILE down
+elif [ -f "docker-compose.\${CURRENT_COLOR}.yml" ]; then
+    echo "Stopping \$CURRENT_COLOR containers..."
     sudo docker-compose -f docker-compose.\${CURRENT_COLOR}.yml down
     rm -f docker-compose.\${CURRENT_COLOR}.yml
 fi
