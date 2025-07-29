@@ -333,7 +333,7 @@ cp \$COMPOSE_FILE docker-compose.\${NEW_COLOR}.yml
 
 # Add container names to services if they don't exist
 # This ensures we have explicit names for blue-green deployment
-awk -v app=\"\$APP_NAME\" -v color=\"\$NEW_COLOR\" '
+awk -v app="\$APP_NAME" -v color="\$NEW_COLOR" '
 /^services:/ { in_services=1 }
 in_services && /^  [a-zA-Z-]+:/ { 
     service=\$0
