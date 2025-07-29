@@ -1,7 +1,7 @@
 {
-  "name": "sample-4",
+  "name": "sample-5",
   "version": "1.0.0",
-  "description": "Sample-4 NodeJS app for sample-4.vadimzak.com",
+  "description": "Sample-5 NodeJS app for sample-5.vadimzak.com",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

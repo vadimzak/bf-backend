@@ -5,7 +5,7 @@ const path = require('path');
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT || 3004;
+const PORT = process.env.PORT || 3005;
 
 // Middleware
 app.use(helmet());
@@ -23,7 +23,7 @@ app.get('/', (req, res) => {
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'healthy',
-    service: 'sample-4',
+    service: 'sample-5',
     timestamp: new Date().toISOString()
   });
 });
@@ -36,6 +36,6 @@ app.use((err, req, res, next) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`Sample-4 app listening on port ${PORT}`);
+  console.log(`Sample-5 app listening on port ${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });

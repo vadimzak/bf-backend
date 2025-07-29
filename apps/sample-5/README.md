@@ -1,11 +1,11 @@
-# sample-4
+# sample-5
 
-A Node.js application deployed at https://sample-4.vadimzak.com
+A Node.js application deployed at https://sample-5.vadimzak.com
 
 ## Configuration
 
-- Port: 3004
-- Domain: sample-4.vadimzak.com
+- Port: 3005
+- Domain: sample-5.vadimzak.com
 
 ## Development
 
@@ -18,7 +18,7 @@ npm run dev
 
 From project root:
 ```bash
-./scripts/deploy-app.sh sample-4
+./scripts/deploy-app.sh sample-5
 ```
 
 Or from this directory:
