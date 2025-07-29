@@ -1,6 +1,12 @@
 # Comprehensive Deployment Guide
 
-This guide covers all aspects of setting up and managing the infrastructure for this project, from initial AWS setup to day-to-day operations.
+**⚠️ IMPORTANT: As of July 29, 2025, this project has migrated to Kubernetes. The Docker Compose infrastructure described below has been decommissioned. For current deployment instructions, see [K8S_MIGRATION_PLAN.md](./K8S_MIGRATION_PLAN.md)**
+
+---
+
+## Legacy Docker Compose Documentation
+
+This guide covers the previous Docker Compose infrastructure that was used before the Kubernetes migration. It is kept for historical reference.
 
 ## Table of Contents
 
