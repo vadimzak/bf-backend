@@ -129,6 +129,10 @@ main() {
     if [[ "$DRY_RUN" == "false" ]]; then
         if post_deployment_health_check; then
             cleanup_old_images
+            
+            # Register app with auto-recovery service
+            register_with_recovery
+            
             log_success "🎉 Deployment completed successfully!"
             echo
             echo "Application is running at: https://$APP_DOMAIN"

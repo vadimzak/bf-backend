@@ -456,3 +456,34 @@ EOF
     
     log_success "Image cleanup completed"
 }
+
+# Register app with auto-recovery service
+register_with_recovery() {
+    log_info "Registering app with auto-recovery service..."
+    
+    # Check if recovery service is installed
+    if ! ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" "test -f /etc/docker-apps-recovery/apps.conf" 2>/dev/null; then
+        log_info "Auto-recovery service not installed, skipping registration"
+        return
+    fi
+    
+    # Register the app
+    ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" << EOF
+# Recovery configuration
+RECOVERY_CONFIG="/etc/docker-apps-recovery/apps.conf"
+APP_LINE="${APP_NAME}|${APP_DIR}|${COMPOSE_FILE}|${HEALTH_ENDPOINT}|${APP_PORT}"
+
+# Check if app is already registered
+if grep -q "^${APP_NAME}|" "\$RECOVERY_CONFIG" 2>/dev/null; then
+    # Update existing entry
+    sudo sed -i "/^${APP_NAME}|/c\\${APP_LINE}" "\$RECOVERY_CONFIG"
+    echo "Updated recovery registration for ${APP_NAME}"
+else
+    # Add new entry
+    echo "\$APP_LINE" | sudo tee -a "\$RECOVERY_CONFIG" > /dev/null
+    echo "Added recovery registration for ${APP_NAME}"
+fi
+EOF
+    
+    log_success "App registered with auto-recovery service"
+}

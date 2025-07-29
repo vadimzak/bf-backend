@@ -328,8 +328,31 @@ else
     log_warning "⚠️  Cannot connect to nginx server - you may need to manually update nginx configuration"
 fi
 
-# Step 3: Remove DNS record
-log_info "Step 3: Removing DNS record for $APP_DOMAIN..."
+# Step 3: Remove from auto-recovery service
+log_info "Step 3: Removing app from auto-recovery service..."
+
+# Try to connect to any available server
+for HOST in "$NGINX_HOST" "51.16.33.8"; do
+    if ssh -i "$SSH_KEY" -o ConnectTimeout=5 -o BatchMode=yes -o StrictHostKeyChecking=no "$REMOTE_USER@$HOST" "test -f /etc/docker-apps-recovery/apps.conf" &>/dev/null; then
+        log_info "Unregistering app from auto-recovery..."
+        ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$REMOTE_USER@$HOST" << EOF
+# Remove app from recovery configuration
+RECOVERY_CONFIG="/etc/docker-apps-recovery/apps.conf"
+if [ -f "\$RECOVERY_CONFIG" ]; then
+    # Remove line containing the app
+    sudo sed -i "/^${APP_NAME}|/d" "\$RECOVERY_CONFIG"
+    echo "Removed ${APP_NAME} from auto-recovery service"
+else
+    echo "Auto-recovery service not configured"
+fi
+EOF
+        log_success "✅ Removed from auto-recovery service"
+        break
+    fi
+done
+
+# Step 4: Remove DNS record
+log_info "Step 4: Removing DNS record for $APP_DOMAIN..."
 
 # Get the hosted zone ID (same as in add-new-app.sh)
 HOSTED_ZONE_ID="Z2O129XK0SJBV9"
@@ -360,8 +383,8 @@ else
     log_warning "⚠️  Failed to remove DNS record (it may not exist)"
 fi
 
-# Step 4: Clean up local Docker resources
-log_info "Step 4: Cleaning up local Docker resources..."
+# Step 5: Clean up local Docker resources
+log_info "Step 5: Cleaning up local Docker resources..."
 
 # Remove local images
 for image in $(docker images "$IMAGE_NAME" --format "{{.Repository}}:{{.Tag}}" 2>/dev/null); do
@@ -377,8 +400,8 @@ done
 
 log_success "✅ Local Docker cleanup completed"
 
-# Step 5: Remove from repository
-log_info "Step 5: Removing app directory from repository..."
+# Step 6: Remove from repository
+log_info "Step 6: Removing app directory from repository..."
 
 # Check git status
 if [[ -n $(git status --porcelain) ]]; then
@@ -432,6 +455,7 @@ echo "Completed actions:"
 echo "  ✓ Removed production containers and images"
 echo "  ✓ Removed remote directory: $REMOTE_APP_DIR"
 echo "  ✓ Updated nginx configuration"
+echo "  ✓ Removed from auto-recovery service"
 echo "  ✓ Removed DNS record for $APP_DOMAIN"
 echo "  ✓ Cleaned up local Docker resources"
 echo "  ✓ Removed local directory: $APP_DIR"
