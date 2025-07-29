@@ -4,8 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Documentation
 
-- full deployment and dev-ops description of our systems can be found at @docs/DEPLOYMENT.md
+- Full deployment and dev-ops description of our systems can be found at @docs/DEPLOYMENT.md
   - IMPORTANT: make sure to update this document with every change in the deployment or dev-ops procedures
+
+## General Directives
+
+- Always use dark mode design by default
 
 ## Dev Ops
 

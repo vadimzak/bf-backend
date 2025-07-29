@@ -319,15 +319,46 @@ echo "New deployment: \$NEW_COLOR"
 # Create deployment-specific compose file
 cp \$COMPOSE_FILE docker-compose.\${NEW_COLOR}.yml
 
-# Update container names in the new compose file - handle both green and blue
-sed -i "s/container_name: \${APP_NAME}-green/container_name: \${APP_NAME}-\${NEW_COLOR}/" docker-compose.\${NEW_COLOR}.yml
-sed -i "s/container_name: \${APP_NAME}-blue/container_name: \${APP_NAME}-\${NEW_COLOR}/" docker-compose.\${NEW_COLOR}.yml
-sed -i "s/container_name: \${APP_NAME}-cron-green/container_name: \${APP_NAME}-cron-\${NEW_COLOR}/" docker-compose.\${NEW_COLOR}.yml
-sed -i "s/container_name: \${APP_NAME}-cron-blue/container_name: \${APP_NAME}-cron-\${NEW_COLOR}/" docker-compose.\${NEW_COLOR}.yml
+# Add container names to services if they don't exist
+# This ensures we have explicit names for blue-green deployment
+awk -v app="\$APP_NAME" -v color="\$NEW_COLOR" '
+/^services:/ { in_services=1 }
+in_services && /^  [a-zA-Z-]+:/ { 
+    service=\$0
+    gsub(/^  /, "", service)
+    gsub(/:.*/, "", service)
+    current_service=service
+}
+in_services && /^    # container_name is set dynamically/ {
+    # Replace the comment with actual container name
+    if (current_service == "sample-app" || current_service == app) {
+        print "    container_name: " app "-" color
+    } else if (current_service == "cron-tasks") {
+        print "    container_name: " app "-cron-" color
+    } else {
+        print "    container_name: " app "-" current_service "-" color
+    }
+    next
+}
+{ print }
+' docker-compose.\${NEW_COLOR}.yml > docker-compose.\${NEW_COLOR}.yml.tmp && mv docker-compose.\${NEW_COLOR}.yml.tmp docker-compose.\${NEW_COLOR}.yml
+
+# Validate that we're not about to recreate existing containers
+echo "Validating container names..."
+EXPECTED_CONTAINERS="\${APP_NAME}-\${NEW_COLOR} \${APP_NAME}-cron-\${NEW_COLOR}"
+for container in \$EXPECTED_CONTAINERS; do
+    if sudo docker ps -a --format "{{.Names}}" | grep -q "^\$container\$"; then
+        echo "ERROR: Container \$container already exists!"
+        echo "This could indicate a failed previous deployment or naming conflict."
+        echo "Please clean up existing containers before proceeding."
+        rm -f docker-compose.\${NEW_COLOR}.yml
+        exit 1
+    fi
+done
 
 # Start new containers alongside old ones
 echo "Starting \$NEW_COLOR containers..."
-sudo docker-compose -f docker-compose.\${NEW_COLOR}.yml up -d
+sudo docker-compose -f docker-compose.\${NEW_COLOR}.yml up -d --no-recreate
 
 # Wait for new containers to be healthy
 echo "Waiting for \$NEW_COLOR containers to be healthy..."
@@ -400,7 +431,9 @@ done
 
 # Update nginx to point to new containers
 echo "Updating nginx configuration..."
+# Handle both explicit container names and docker-compose default names
 sudo sed -i "s/\${APP_NAME}-\${CURRENT_COLOR}:\${APP_PORT}/\${APP_NAME}-\${NEW_COLOR}:\${APP_PORT}/g" \$NGINX_CONFIG
+sudo sed -i "s/\${APP_NAME}-\${APP_NAME}-[0-9]*:\${APP_PORT}/\${APP_NAME}-\${NEW_COLOR}:\${APP_PORT}/g" \$NGINX_CONFIG
 sudo sed -i "s/\${APP_NAME}-cron-\${CURRENT_COLOR}/\${APP_NAME}-cron-\${NEW_COLOR}/g" \$NGINX_CONFIG
 
 # Reload nginx configuration (zero downtime)
