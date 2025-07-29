@@ -239,7 +239,7 @@ if ssh -i "$SSH_KEY" -o ConnectTimeout=10 -o BatchMode=yes -o StrictHostKeyCheck
         }
         
         # Skip app configuration comments
-        /^# .* App Configuration$/ && tolower($2) == tolower(app) {
+        /^# .* App Configuration$/ && $2 == app {
             skip_comment = 1
             next
         }
@@ -353,6 +353,7 @@ EOF
 # Execute DNS deletion
 if aws route53 change-resource-record-sets \
     --hosted-zone-id "$HOSTED_ZONE_ID" \
+    --profile bf \
     --change-batch "$CHANGE_BATCH" > /dev/null 2>&1; then
     log_success "✅ DNS record removed"
 else

@@ -103,6 +103,29 @@ ssh -i ~/.ssh/sample-app-key.pem ec2-user@sample.vadimzak.com "cat /var/www/samp
     exit 1
 }
 
+# Ensure default catch-all server block exists at the beginning
+if ! grep -q "listen 80 default_server;" "$NGINX_CONFIG"; then
+    echo "Adding default catch-all server block..."
+    TEMP_CONFIG="/tmp/nginx.conf.temp.$$"
+    cat > "$TEMP_CONFIG" << 'EOF'
+# Default catch-all server block
+# This prevents undefined domains from defaulting to the first server block
+server {
+    listen 80 default_server;
+    listen 443 ssl default_server;
+    server_name _;
+    
+    ssl_certificate /var/www/ssl/fullchain.pem;
+    ssl_certificate_key /var/www/ssl/privkey.pem;
+    
+    return 444; # Close connection without response
+}
+
+EOF
+    cat "$NGINX_CONFIG" >> "$TEMP_CONFIG"
+    mv "$TEMP_CONFIG" "$NGINX_CONFIG"
+fi
+
 # Check if nginx config already exists for this domain
 if grep -q "server_name $DOMAIN;" "$NGINX_CONFIG"; then
     echo "⚠️  Nginx configuration for $DOMAIN already exists. Skipping nginx update."

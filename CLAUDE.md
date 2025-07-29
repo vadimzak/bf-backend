@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Dev Ops
+
+- All deployment related changes should be executed by deployment scripts, every time you modify something directly on a server - make sure this change is covered in one of the deployment scripts for future interactions
+
 ## Architecture Overview
 
 This is an NX monorepo with a production-ready Node.js application deployed on AWS. The main application lives in `apps/sample-app/` and uses Express + DynamoDB with Docker containerization.
@@ -127,6 +131,16 @@ All infrastructure scripts are located in the `scripts/` directory:
 - **`scripts/remove-app.sh`** - Removes apps from repository and production
 - **`scripts/lib/deploy-common.sh`** - Shared deployment functions and utilities
 - **`scripts/renew-wildcard-cert.sh`** - Renews the wildcard SSL certificate
+
+#### SSH and Remote Management Scripts
+- **`scripts/remote-exec.sh`** - Execute commands on the EC2 instance without manual SSH
+- **`scripts/server-ops.sh`** - Server operations and management utilities
+
+**Important**: Always use `scripts/remote-exec.sh` for SSH operations instead of direct SSH commands. Example:
+```bash
+./scripts/remote-exec.sh "sudo docker ps"
+./scripts/remote-exec.sh "cat /var/www/sample-app/deploy/nginx.conf"
+```
 
 ### Adding New Apps
 
