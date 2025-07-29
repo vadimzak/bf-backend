@@ -2,6 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Documentation
+
+- full deployment and dev-ops description of our systems can be found at @docs/DEPLOYMENT.md
+  - IMPORTANT: make sure to update this document with every change in the deployment or dev-ops procedures
+
 ## Dev Ops
 
 - All deployment related changes should be executed by deployment scripts, every time you modify something directly on a server - make sure this change is covered in one of the deployment scripts for future interactions.

@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   sample-app:
-    container_name: sample-app-green
+    # container_name is set dynamically by deployment script
     image: sample-app:latest
     restart: unless-stopped
     ports:
@@ -34,7 +34,7 @@ services:
 
   # Scheduled tasks runner
   cron-tasks:
-    container_name: sample-app-cron-green
+    # container_name is set dynamically by deployment script
     image: sample-app:latest
     restart: unless-stopped
     command: ["node", "cron/scheduler.js"]

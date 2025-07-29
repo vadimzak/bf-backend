@@ -42,8 +42,8 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Something went wrong!' });
 });
 
-// // Start server
-// app.listen(PORT, () => {
-//   console.log(`Sample app listening on port ${PORT}`);
-//   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-// });
+// Start server
+app.listen(PORT, () => {
+  console.log(`Sample app listening on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+});

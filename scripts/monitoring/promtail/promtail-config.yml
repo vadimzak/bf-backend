@@ -1,0 +1,110 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # Docker container logs
+  - job_name: docker
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: docker
+          __path__: /var/lib/docker/containers/*/*log
+    
+    pipeline_stages:
+      # Extract container ID from filename
+      - regex:
+          expression: '\/var\/lib\/docker\/containers\/(?P<container_id>[a-zA-Z0-9]+)\/.*'
+      
+      # Parse JSON log format
+      - json:
+          expressions:
+            output: log
+            stream: stream
+            attrs:
+      
+      # Extract container name from attrs
+      - json:
+          expressions:
+            tag: attrs.tag
+          source: attrs
+      
+      # Parse container name to extract app name and color
+      - regex:
+          expression: '(?P<app_name>[^-]+)(?:-(?P<color>blue|green))?(?:-(?P<service>cron))?'
+          source: tag
+      
+      # Set labels
+      - labels:
+          container_id:
+          app_name:
+          color:
+          service:
+          stream:
+      
+      # Output the actual log message
+      - output:
+          source: output
+
+  # System logs
+  - job_name: syslog
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: syslog
+          __path__: /var/log/syslog
+    
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<timestamp>\w+\s+\d+\s+\d+:\d+:\d+)\s+(?P<hostname>\S+)\s+(?P<service>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+      
+      - labels:
+          hostname:
+          service:
+          pid:
+      
+      - timestamp:
+          source: timestamp
+          format: 'Jan 02 15:04:05'
+      
+      - output:
+          source: message
+
+  # Nginx access logs
+  - job_name: nginx
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: nginx
+          __path__: /var/log/nginx/access.log
+    
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<remote_addr>\S+) - (?P<remote_user>\S+) \[(?P<time_local>.+)\] "(?P<method>\S+) (?P<path>\S+) (?P<protocol>\S+)" (?P<status>\d+) (?P<bytes_sent>\d+) "(?P<http_referer>[^"]*)" "(?P<http_user_agent>[^"]*)"'
+      
+      - labels:
+          method:
+          status:
+      
+      - metrics:
+          http_nginx_response_bytes_total:
+            type: Counter
+            description: "Total bytes sent"
+            source: bytes_sent
+            config:
+              action: add
+          http_nginx_request_duration_seconds:
+            type: Histogram
+            description: "Request duration"
+            source: request_time
+            config:
+              buckets: [0.001, 0.01, 0.1, 0.5, 1.0, 5.0]
