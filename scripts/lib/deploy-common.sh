@@ -283,27 +283,27 @@ echo "Creating backup of current containers..."
 sudo docker-compose -f \$COMPOSE_FILE ps --format 'table {{.Service}}\t{{.Image}}\t{{.Status}}' > deployment_backup.txt
 echo "\$(date): Pre-deployment backup created" >> deployment.log
 
-# Stop and start app service
+# Deploy all services defined in docker-compose
 echo "Performing deployment..."
-sudo docker-compose -f \$COMPOSE_FILE stop \$APP_NAME
-sudo docker-compose -f \$COMPOSE_FILE up -d \$APP_NAME
+sudo docker-compose -f \$COMPOSE_FILE down
+sudo docker-compose -f \$COMPOSE_FILE up -d
 
-# Wait for app to be healthy
-echo "Waiting for application to start..."
-sleep 10
+# Wait for services to start
+echo "Waiting for services to start..."
+sleep 15
 
-# Check if app container is healthy
-if sudo docker ps | grep -q "\$CONTAINER_NAME.*healthy"; then
-    echo "Application container is healthy"
-else
-    echo "Warning: Application container may not be healthy"
-fi
+# Check container health
+echo "Checking container status..."
+sudo docker-compose -f \$COMPOSE_FILE ps
 
-# Ensure container is connected to shared network
-if ! sudo docker network inspect $SHARED_NETWORK | grep -q "\$CONTAINER_NAME"; then
-    echo "Connecting to shared network..."
-    sudo docker network connect $SHARED_NETWORK \$CONTAINER_NAME || true
-fi
+# Ensure all app containers are connected to shared network
+for container in \$(sudo docker-compose -f \$COMPOSE_FILE ps -q); do
+    container_name=\$(sudo docker inspect -f '{{.Name}}' \$container | sed 's/^\\///')
+    if ! sudo docker network inspect $SHARED_NETWORK | grep -q "\$container_name"; then
+        echo "Connecting \$container_name to shared network..."
+        sudo docker network connect $SHARED_NETWORK \$container_name || true
+    fi
+done
 
 echo "Deployment completed successfully"
 echo "\$(date): Deployment completed" >> deployment.log

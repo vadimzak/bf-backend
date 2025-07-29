@@ -187,8 +187,15 @@ APP_DOMAIN=my-app.vadimzak.com
 ### Shared Infrastructure
 - All deployment logic is in `scripts/lib/deploy-common.sh`
 - Wildcard SSL certificate covers all subdomains
-- Shared nginx configuration with automatic routing
+- Shared nginx and watchtower run as separate services
 - Docker network connectivity handled automatically
+- Apps can have multiple services (e.g., sample-app has cron tasks)
+
+### Infrastructure Services
+The shared infrastructure runs separately:
+- **nginx**: Reverse proxy handling SSL and routing for all apps
+- **watchtower**: Automated Docker container updates
+- Located in `/var/www/sample-app` on the server
 
 ## SSL Certificate Management
 
