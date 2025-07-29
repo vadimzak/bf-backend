@@ -109,9 +109,6 @@ if grep -q "server_name $DOMAIN;" "$NGINX_CONFIG"; then
     rm -f "$NGINX_CONFIG"
 else
     # Add new app configuration to nginx
-    # Insert before the last closing brace
-    sed -i '' -e '/^}$/d' "$NGINX_CONFIG"
-    
     cat >> "$NGINX_CONFIG" << EOF
 
 # $APP_NAME App Configuration
@@ -152,8 +149,6 @@ server {
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
-}
-
 }
 EOF
 
