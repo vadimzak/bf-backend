@@ -228,56 +228,81 @@ if ssh -i "$SSH_KEY" -o ConnectTimeout=10 -o BatchMode=yes -o StrictHostKeyCheck
     NGINX_CONFIG_NEW="/tmp/nginx.conf.new"
     
     if scp -i "$SSH_KEY" -o StrictHostKeyChecking=no "$REMOTE_USER@$NGINX_HOST:/var/www/sample-app/deploy/nginx.conf" "$NGINX_CONFIG" 2>/dev/null; then
-        # Remove app's server blocks
-        # Use awk to remove the server blocks for this app
+        # Remove app's server blocks and comments
+        # More robust removal that handles comments and server blocks
         awk -v app="$APP_NAME" -v domain="$APP_DOMAIN" '
-        BEGIN { skip = 0; buffer = "" }
-        /^# .* App Configuration$/ && $2 == app {
-            skip = 1
-            next
-        }
-        /^server \{/ && skip == 0 {
-            in_server = 1
-            buffer = $0 "\n"
-            next
-        }
-        in_server && /server_name/ && $2 ~ domain {
-            skip = 1
+        BEGIN { 
+            skip_comment = 0
+            skip_server = 0
             in_server = 0
-            buffer = ""
+            server_count = 0
+        }
+        
+        # Skip app configuration comments
+        /^# .* App Configuration$/ && tolower($2) == tolower(app) {
+            skip_comment = 1
             next
         }
+        
+        # If we just skipped a comment, prepare to skip the next server blocks
+        skip_comment && /^server \{/ {
+            skip_server = 1
+            skip_comment = 0
+            server_count = 0
+        }
+        
+        # Track server blocks
+        /^server \{/ {
+            in_server = 1
+            if (!skip_server) {
+                server_block = $0 "\n"
+            }
+            next
+        }
+        
+        # Check server_name in server block
+        in_server && /server_name/ {
+            if ($2 ~ domain || $2 == domain || $2 == (domain ";")) {
+                skip_server = 1
+                server_block = ""
+            } else if (!skip_server) {
+                server_block = server_block $0 "\n"
+            }
+            next
+        }
+        
+        # End of server block
         in_server && /^\}/ {
             in_server = 0
-            if (skip == 0) {
-                print buffer $0
+            if (!skip_server) {
+                print server_block $0
             } else {
-                skip = 0
+                server_count++
+                # After skipping 2 server blocks (HTTP and HTTPS), reset
+                if (server_count >= 2) {
+                    skip_server = 0
+                    server_count = 0
+                }
             }
-            buffer = ""
+            server_block = ""
             next
         }
+        
+        # Inside server block
         in_server {
-            buffer = buffer $0 "\n"
-            next
-        }
-        skip && /^server \{/ {
-            skip_depth = 1
-        }
-        skip && skip_depth > 0 && /^\{/ {
-            skip_depth++
-        }
-        skip && skip_depth > 0 && /^\}/ {
-            skip_depth--
-            if (skip_depth == 0) {
-                skip = 0
+            if (!skip_server) {
+                server_block = server_block $0 "\n"
             }
             next
         }
-        skip {
+        
+        # Skip empty lines after removed sections
+        skip_server && /^$/ {
             next
         }
-        {
+        
+        # Print all other lines
+        !in_server && !skip_server && !skip_comment {
             print
         }
         ' "$NGINX_CONFIG" > "$NGINX_CONFIG_NEW"
