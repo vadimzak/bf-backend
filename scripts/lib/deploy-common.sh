@@ -376,9 +376,9 @@ echo "Updating nginx configuration..."
 sudo sed -i "s/\${APP_NAME}-\${CURRENT_COLOR}:\${APP_PORT}/\${APP_NAME}-\${NEW_COLOR}:\${APP_PORT}/g" \$NGINX_CONFIG
 sudo sed -i "s/\${APP_NAME}-cron-\${CURRENT_COLOR}/\${APP_NAME}-cron-\${NEW_COLOR}/g" \$NGINX_CONFIG
 
-# Reload nginx (zero downtime)
-echo "Reloading nginx..."
-sudo docker exec sample-app-nginx-1 nginx -s reload
+# Restart nginx to pick up config changes (brief downtime for nginx only)
+echo "Restarting nginx..."
+cd /var/www/sample-app && sudo docker-compose -f docker-compose-infra.yml restart nginx
 
 # Give nginx time to switch
 sleep 5
