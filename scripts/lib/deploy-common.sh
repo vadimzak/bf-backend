@@ -61,9 +61,29 @@ check_prerequisites() {
     fi
     
     # Test SSH connection
+    # First try with domain name
     if ! ssh -i "$SSH_KEY" -o ConnectTimeout=10 -o BatchMode=yes -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" "echo 'SSH connection test'" &>/dev/null; then
-        log_error "Cannot connect to $REMOTE_HOST via SSH"
-        exit 1
+        # If domain fails, check if it's a DNS issue and try with IP
+        if [[ "$REMOTE_HOST" == *.vadimzak.com ]]; then
+            log_warning "Cannot connect to $REMOTE_HOST - checking if DNS issue..."
+            # Try to resolve the domain
+            RESOLVED_IP=$(dig +short "$REMOTE_HOST" 2>/dev/null | head -1)
+            if [[ -n "$RESOLVED_IP" ]] && [[ "$RESOLVED_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                log_info "DNS resolved to $RESOLVED_IP, using IP address instead"
+                REMOTE_HOST="$RESOLVED_IP"
+                if ! ssh -i "$SSH_KEY" -o ConnectTimeout=10 -o BatchMode=yes -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" "echo 'SSH connection test'" &>/dev/null; then
+                    log_error "Cannot connect to $REMOTE_HOST via SSH"
+                    exit 1
+                fi
+            else
+                log_error "Cannot resolve $REMOTE_HOST and cannot connect via SSH"
+                log_info "This might be a new app - ensure DNS is configured and propagated"
+                exit 1
+            fi
+        else
+            log_error "Cannot connect to $REMOTE_HOST via SSH"
+            exit 1
+        fi
     fi
     
     log_success "Prerequisites check passed"

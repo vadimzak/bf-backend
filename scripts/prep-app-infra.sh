@@ -115,8 +115,8 @@ server {
     listen 443 ssl default_server;
     server_name _;
     
-    ssl_certificate /var/www/ssl/fullchain.pem;
-    ssl_certificate_key /var/www/ssl/privkey.pem;
+    ssl_certificate /etc/ssl/fullchain.pem;
+    ssl_certificate_key /etc/ssl/privkey.pem;
     
     return 444; # Close connection without response
 }
@@ -145,8 +145,8 @@ server {
     listen 443 ssl;
     server_name $DOMAIN;
     
-    ssl_certificate /var/www/ssl/fullchain.pem;
-    ssl_certificate_key /var/www/ssl/privkey.pem;
+    ssl_certificate /etc/ssl/fullchain.pem;
+    ssl_certificate_key /etc/ssl/privkey.pem;
     
     # SSL configuration
     ssl_protocols TLSv1.2 TLSv1.3;
@@ -180,10 +180,14 @@ EOF
     ssh -i ~/.ssh/sample-app-key.pem ec2-user@sample.vadimzak.com "sudo cp /tmp/nginx.conf.new /var/www/sample-app/deploy/nginx.conf" > /dev/null 2>&1
     rm -f "$NGINX_CONFIG"
 
-    # Restart nginx to apply new configuration
-    echo "Restarting nginx..."
-    ssh -i ~/.ssh/sample-app-key.pem ec2-user@sample.vadimzak.com "cd /var/www/sample-app && sudo docker-compose -f docker-compose.prod.yml restart nginx" > /dev/null 2>&1 || {
-        echo "⚠️  Warning: Failed to restart nginx. You may need to restart it manually."
+    # Reload nginx to apply new configuration
+    echo "Reloading nginx configuration..."
+    ssh -i ~/.ssh/sample-app-key.pem ec2-user@sample.vadimzak.com "cd /var/www/sample-app && sudo docker-compose -f docker-compose-infra.yml exec -T nginx nginx -s reload" > /dev/null 2>&1 || {
+        echo "⚠️  Warning: Failed to reload nginx. Trying to restart nginx service..."
+        # If reload fails, try restarting the nginx service
+        ssh -i ~/.ssh/sample-app-key.pem ec2-user@sample.vadimzak.com "cd /var/www/sample-app && sudo docker-compose -f docker-compose-infra.yml restart nginx" > /dev/null 2>&1 || {
+            echo "⚠️  Warning: Failed to restart nginx. You may need to use ./scripts/manage-infra.sh reload-nginx"
+        }
     }
 fi
 

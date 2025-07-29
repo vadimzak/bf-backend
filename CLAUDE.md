@@ -270,15 +270,41 @@ The shared infrastructure runs separately:
 - **nginx**: Reverse proxy handling SSL and routing for all apps
 - **watchtower**: Automated Docker container updates
 - Located in `/var/www/sample-app` on the server
+- Managed via `docker-compose-infra.yml`
+
+#### Managing Infrastructure
+```bash
+# Start infrastructure services
+./scripts/manage-infra.sh start
+
+# Stop infrastructure services
+./scripts/manage-infra.sh stop
+
+# Restart infrastructure services
+./scripts/manage-infra.sh restart
+
+# Check infrastructure status
+./scripts/manage-infra.sh status
+
+# View logs
+./scripts/manage-infra.sh logs
+./scripts/manage-infra.sh logs nginx
+
+# Reload nginx configuration (no downtime)
+./scripts/manage-infra.sh reload-nginx
+```
 
 ## SSL Certificate Management
 
 ### Wildcard Certificate Setup
 The infrastructure uses a single wildcard certificate (*.vadimzak.com) that covers all subdomains:
-- Certificate location: `/var/www/ssl/`
+- Certificate location on server: `/var/www/ssl/`
+- Mounted in nginx container as: `/etc/ssl/`
 - Managed by certbot with Route53 DNS validation
 - Auto-renewal configured via certbot
 - No need to update certificates when adding new apps
+
+**Note**: Nginx config files should reference certificates as `/etc/ssl/fullchain.pem` and `/etc/ssl/privkey.pem`
 
 ### Certificate Renewal
 Run the renewal script manually or set up a cron job:
@@ -315,13 +341,14 @@ ssh -i ~/.ssh/sample-app-key.pem ec2-user@sample.vadimzak.com \
 
 #### Manual Nginx Operations
 ```bash
-# Restart nginx after config changes
-ssh -i ~/.ssh/sample-app-key.pem ec2-user@sample.vadimzak.com \
-  "cd /var/www/sample-app && sudo docker-compose -f docker-compose.prod.yml restart nginx"
+# Reload nginx configuration (preferred - no downtime)
+./scripts/manage-infra.sh reload-nginx
+
+# Restart nginx service
+./scripts/manage-infra.sh restart
 
 # View nginx logs
-ssh -i ~/.ssh/sample-app-key.pem ec2-user@sample.vadimzak.com \
-  "cd /var/www/sample-app && sudo docker-compose -f docker-compose.prod.yml logs nginx"
+./scripts/manage-infra.sh logs nginx
 ```
 
 #### Emergency Rollback
@@ -379,3 +406,16 @@ sudo docker-compose -f docker-compose.prod.yml up -d
 1. Verify network exists: `ssh ... "sudo docker network ls"`
 2. Check network connections: `ssh ... "sudo docker network inspect sample-app_app-network"`
 3. Test internal connectivity: `ssh ... "sudo docker exec container-1 ping container-2"`
+
+#### DNS Propagation Issues
+If deployment fails with DNS resolution errors on a new app:
+1. DNS records may not have propagated yet (can take 5-15 minutes)
+2. The deployment script will automatically fall back to using IP address
+3. Alternatively, use the IP directly: `SSH_REMOTE_HOST=51.16.33.8 ./scripts/deploy-app.sh app-name`
+
+#### Nginx SSL Certificate Issues
+If nginx fails to start or reload with SSL certificate errors:
+1. Ensure certificates exist: `./scripts/remote-exec.sh "ls -la /var/www/ssl/"`
+2. Check certificate paths in nginx config use `/etc/ssl/` not `/var/www/ssl/`
+3. Verify certificate mounting: `./scripts/remote-exec.sh "sudo docker exec sample-app-nginx-1 ls -la /etc/ssl/"`
+4. Fix and reload: `./scripts/manage-infra.sh reload-nginx`
