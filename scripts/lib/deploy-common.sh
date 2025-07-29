@@ -333,7 +333,7 @@ cp \$COMPOSE_FILE docker-compose.\${NEW_COLOR}.yml
 
 # Add container names to services if they don't exist
 # This ensures we have explicit names for blue-green deployment
-awk -v app="\$APP_NAME" -v color="\$NEW_COLOR" '
+awk -v app=\"\$APP_NAME\" -v color=\"\$NEW_COLOR\" '
 /^services:/ { in_services=1 }
 in_services && /^  [a-zA-Z-]+:/ { 
     service=\$0
@@ -370,7 +370,7 @@ done
 
 # Start new containers alongside old ones
 echo "Starting \$NEW_COLOR containers..."
-sudo docker-compose -f docker-compose.\${NEW_COLOR}.yml up -d --no-recreate
+sudo docker-compose -p \${APP_NAME}-\${NEW_COLOR} -f docker-compose.\${NEW_COLOR}.yml up -d --no-recreate
 
 # Wait for new containers to be healthy
 echo "Waiting for \$NEW_COLOR containers to be healthy..."
@@ -424,7 +424,7 @@ if [ "\$HEALTHY" != "true" ]; then
     echo "Rolling back by stopping \$NEW_COLOR containers..."
     # List containers that will be stopped (for safety)
     echo "Stopping containers:"
-    sudo docker-compose -f docker-compose.\${NEW_COLOR}.yml ps
+    sudo docker-compose -p \${APP_NAME}-\${NEW_COLOR} -f docker-compose.\${NEW_COLOR}.yml ps
     # Stop only the new color containers
     sudo docker stop \${APP_NAME}-\${NEW_COLOR} \${APP_NAME}-cron-\${NEW_COLOR} 2>/dev/null || true
     sudo docker rm \${APP_NAME}-\${NEW_COLOR} \${APP_NAME}-cron-\${NEW_COLOR} 2>/dev/null || true
@@ -433,7 +433,7 @@ if [ "\$HEALTHY" != "true" ]; then
 fi
 
 # Connect new containers to shared network
-for container in \$(sudo docker-compose -f docker-compose.\${NEW_COLOR}.yml ps -q); do
+for container in \$(sudo docker-compose -p \${APP_NAME}-\${NEW_COLOR} -f docker-compose.\${NEW_COLOR}.yml ps -q); do
     container_name=\$(sudo docker inspect -f '{{.Name}}' \$container | sed 's/^\\///')
     if ! sudo docker network inspect $SHARED_NETWORK | grep -q "\$container_name"; then
         echo "Connecting \$container_name to shared network..."
@@ -468,7 +468,7 @@ if [ "\$CURRENT_COLOR" = "none" ]; then
     sudo docker-compose -f \$COMPOSE_FILE down
 elif [ -f "docker-compose.\${CURRENT_COLOR}.yml" ]; then
     echo "Stopping \$CURRENT_COLOR containers..."
-    sudo docker-compose -f docker-compose.\${CURRENT_COLOR}.yml down
+    sudo docker-compose -p \${APP_NAME}-\${CURRENT_COLOR} -f docker-compose.\${CURRENT_COLOR}.yml down
     rm -f docker-compose.\${CURRENT_COLOR}.yml
 fi
 
@@ -572,7 +572,7 @@ if sudo docker ps -a --format "{{.Names}}" | grep -q "${APP_NAME}-\${ROLLBACK_CO
     # Stop current color
     sleep 5
     if [ -f "docker-compose.\${CURRENT_COLOR}.yml" ]; then
-        sudo docker-compose -f docker-compose.\${CURRENT_COLOR}.yml down
+        sudo docker-compose -p \${APP_NAME}-\${CURRENT_COLOR} -f docker-compose.\${CURRENT_COLOR}.yml down
         rm -f docker-compose.\${CURRENT_COLOR}.yml
     fi
     
