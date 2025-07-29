@@ -5,6 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Dev Ops
 
 - All deployment related changes should be executed by deployment scripts, every time you modify something directly on a server - make sure this change is covered in one of the deployment scripts for future interactions
+- NEVER execute a command that may lead to a downtime of any app on the server without explaining this to the user and getting an explicit permission
 
 ## Architecture Overview
 
