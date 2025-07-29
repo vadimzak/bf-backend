@@ -278,14 +278,17 @@ setup_remote_environment() {
     log_success "Remote environment setup completed"
 }
 
-# Deploy containers on remote server
+# Deploy containers on remote server with blue-green strategy
 deploy_to_remote() {
-    log_info "Deploying containers on remote server..."
+    log_info "Deploying containers on remote server (zero-downtime)..."
     
     if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "DRY RUN: Would update docker-compose and restart containers"
+        log_info "DRY RUN: Would perform blue-green deployment"
         return
     fi
+    
+    # Get current git hash for versioning
+    GIT_HASH=$(git rev-parse --short HEAD)
     
     # Create deployment script for remote execution
     cat > /tmp/deploy_commands.sh << EOF
@@ -295,30 +298,60 @@ set -e
 APP_DIR="$APP_DIR"
 COMPOSE_FILE="$COMPOSE_FILE"
 APP_NAME="$APP_NAME"
-CONTAINER_NAME="${APP_NAME}-${APP_NAME}-1"
+APP_PORT="$APP_PORT"
+GIT_HASH="$GIT_HASH"
+NGINX_CONFIG="/var/www/sample-app/deploy/nginx.conf"
 
 cd \$APP_DIR
 
-# Create backup of current containers
-echo "Creating backup of current containers..."
-sudo docker-compose -f \$COMPOSE_FILE ps --format 'table {{.Service}}\t{{.Image}}\t{{.Status}}' > deployment_backup.txt
-echo "\$(date): Pre-deployment backup created" >> deployment.log
+# Determine current deployment color
+if sudo docker ps --format "{{.Names}}" | grep -q "\${APP_NAME}-blue"; then
+    CURRENT_COLOR="blue"
+    NEW_COLOR="green"
+else
+    CURRENT_COLOR="green"
+    NEW_COLOR="blue"
+fi
 
-# Deploy all services defined in docker-compose
-echo "Performing deployment..."
-sudo docker-compose -f \$COMPOSE_FILE down
-sudo docker-compose -f \$COMPOSE_FILE up -d
+echo "Current deployment: \$CURRENT_COLOR"
+echo "New deployment: \$NEW_COLOR"
 
-# Wait for services to start
-echo "Waiting for services to start..."
-sleep 15
+# Create deployment-specific compose file
+cp \$COMPOSE_FILE docker-compose.\${NEW_COLOR}.yml
 
-# Check container health
-echo "Checking container status..."
-sudo docker-compose -f \$COMPOSE_FILE ps
+# Update container names and internal ports in the new compose file
+sed -i "s/container_name: \${APP_NAME}-\${APP_NAME}/container_name: \${APP_NAME}-\${NEW_COLOR}/" docker-compose.\${NEW_COLOR}.yml
+sed -i "s/container_name: \${APP_NAME}-cron-tasks/container_name: \${APP_NAME}-cron-\${NEW_COLOR}/" docker-compose.\${NEW_COLOR}.yml
 
-# Ensure all app containers are connected to shared network
-for container in \$(sudo docker-compose -f \$COMPOSE_FILE ps -q); do
+# Start new containers alongside old ones
+echo "Starting \$NEW_COLOR containers..."
+sudo docker-compose -f docker-compose.\${NEW_COLOR}.yml up -d
+
+# Wait for new containers to be healthy
+echo "Waiting for \$NEW_COLOR containers to be healthy..."
+HEALTH_CHECK_RETRIES=30
+HEALTHY=false
+
+for i in \$(seq 1 \$HEALTH_CHECK_RETRIES); do
+    if sudo docker exec \${APP_NAME}-\${NEW_COLOR} curl -f http://localhost:\${APP_PORT}/health >/dev/null 2>&1; then
+        echo "Health check passed!"
+        HEALTHY=true
+        break
+    fi
+    echo "Health check attempt \$i/\$HEALTH_CHECK_RETRIES..."
+    sleep 2
+done
+
+if [ "\$HEALTHY" != "true" ]; then
+    echo "ERROR: New deployment failed health checks"
+    echo "Rolling back by stopping \$NEW_COLOR containers..."
+    sudo docker-compose -f docker-compose.\${NEW_COLOR}.yml down
+    rm -f docker-compose.\${NEW_COLOR}.yml
+    exit 1
+fi
+
+# Connect new containers to shared network
+for container in \$(sudo docker-compose -f docker-compose.\${NEW_COLOR}.yml ps -q); do
     container_name=\$(sudo docker inspect -f '{{.Name}}' \$container | sed 's/^\\///')
     if ! sudo docker network inspect $SHARED_NETWORK | grep -q "\$container_name"; then
         echo "Connecting \$container_name to shared network..."
@@ -326,8 +359,30 @@ for container in \$(sudo docker-compose -f \$COMPOSE_FILE ps -q); do
     fi
 done
 
-echo "Deployment completed successfully"
-echo "\$(date): Deployment completed" >> deployment.log
+# Update nginx to point to new containers
+echo "Updating nginx configuration..."
+sudo sed -i "s/\${APP_NAME}-\${CURRENT_COLOR}:\${APP_PORT}/\${APP_NAME}-\${NEW_COLOR}:\${APP_PORT}/g" \$NGINX_CONFIG
+sudo sed -i "s/\${APP_NAME}-cron-\${CURRENT_COLOR}/\${APP_NAME}-cron-\${NEW_COLOR}/g" \$NGINX_CONFIG
+
+# Reload nginx (zero downtime)
+echo "Reloading nginx..."
+sudo docker exec sample-app-nginx-1 nginx -s reload
+
+# Give nginx time to switch
+sleep 5
+
+# Stop old containers
+echo "Stopping \$CURRENT_COLOR containers..."
+if [ -f "docker-compose.\${CURRENT_COLOR}.yml" ]; then
+    sudo docker-compose -f docker-compose.\${CURRENT_COLOR}.yml down
+    rm -f docker-compose.\${CURRENT_COLOR}.yml
+fi
+
+# Rename new compose file to standard name for next deployment
+mv docker-compose.\${NEW_COLOR}.yml \$COMPOSE_FILE
+
+echo "Blue-green deployment completed successfully"
+echo "\$(date): Deployment completed (blue-green from \$CURRENT_COLOR to \$NEW_COLOR)" >> deployment.log
 EOF
 
     # Copy and execute deployment script on remote server
@@ -337,7 +392,7 @@ EOF
     # Clean up
     rm -f /tmp/deploy_commands.sh
     
-    log_success "Remote deployment completed"
+    log_success "Zero-downtime deployment completed"
 }
 
 # Post-deployment health check
@@ -379,47 +434,65 @@ post_deployment_health_check() {
     fi
 }
 
-# Rollback function
+# Rollback function with blue-green support
 rollback_deployment() {
     log_warning "Rolling back deployment..."
-    
-    # Get list of available images on remote server
-    AVAILABLE_IMAGES=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" \
-        "sudo docker images $IMAGE_NAME --format '{{.Tag}}' | grep -v latest | head -5")
-    
-    if [[ -z "$AVAILABLE_IMAGES" ]]; then
-        log_error "No previous images available for rollback"
-        return 1
-    fi
-    
-    echo "Available images for rollback:"
-    echo "$AVAILABLE_IMAGES" | nl
-    echo
-    
-    # Use the most recent non-latest image for rollback
-    ROLLBACK_TAG=$(echo "$AVAILABLE_IMAGES" | head -1)
-    
-    if [[ -z "$ROLLBACK_TAG" ]]; then
-        log_error "No suitable rollback image found"
-        return 1
-    fi
-    
-    log_info "Rolling back to image: $IMAGE_NAME:$ROLLBACK_TAG"
     
     ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" << EOF
 cd $APP_DIR
 
-# Tag the rollback image as latest
-sudo docker tag $IMAGE_NAME:$ROLLBACK_TAG $IMAGE_NAME:latest
+# Determine current color
+if sudo docker ps --format "{{.Names}}" | grep -q "${APP_NAME}-blue"; then
+    CURRENT_COLOR="blue"
+    ROLLBACK_COLOR="green"
+else
+    CURRENT_COLOR="green"
+    ROLLBACK_COLOR="blue"
+fi
 
-# Restart containers with rollback image
-sudo docker-compose -f docker-compose.prod.yml down
-sudo docker-compose -f docker-compose.prod.yml up -d
+echo "Current deployment: \$CURRENT_COLOR"
+echo "Rolling back to: \$ROLLBACK_COLOR"
 
-echo "\$(date): Rollback completed to $ROLLBACK_TAG" >> deployment.log
+# Check if rollback color containers exist but are stopped
+if sudo docker ps -a --format "{{.Names}}" | grep -q "${APP_NAME}-\${ROLLBACK_COLOR}"; then
+    # Start the stopped containers
+    echo "Restarting \$ROLLBACK_COLOR containers..."
+    if [ -f "docker-compose.\${ROLLBACK_COLOR}.yml" ]; then
+        sudo docker-compose -f docker-compose.\${ROLLBACK_COLOR}.yml up -d
+    else
+        # Recreate compose file for rollback color
+        cp docker-compose.prod.yml docker-compose.\${ROLLBACK_COLOR}.yml
+        sed -i "s/container_name: ${APP_NAME}-\${CURRENT_COLOR}/container_name: ${APP_NAME}-\${ROLLBACK_COLOR}/" docker-compose.\${ROLLBACK_COLOR}.yml
+        sed -i "s/container_name: ${APP_NAME}-cron-\${CURRENT_COLOR}/container_name: ${APP_NAME}-cron-\${ROLLBACK_COLOR}/" docker-compose.\${ROLLBACK_COLOR}.yml
+        sudo docker-compose -f docker-compose.\${ROLLBACK_COLOR}.yml up -d
+    fi
+    
+    # Wait for health check
+    sleep 10
+    
+    # Update nginx to point back
+    NGINX_CONFIG="/var/www/sample-app/deploy/nginx.conf"
+    sudo sed -i "s/${APP_NAME}-\${CURRENT_COLOR}:${APP_PORT}/${APP_NAME}-\${ROLLBACK_COLOR}:${APP_PORT}/g" \$NGINX_CONFIG
+    sudo docker exec sample-app-nginx-1 nginx -s reload
+    
+    # Stop current color
+    sleep 5
+    if [ -f "docker-compose.\${CURRENT_COLOR}.yml" ]; then
+        sudo docker-compose -f docker-compose.\${CURRENT_COLOR}.yml down
+        rm -f docker-compose.\${CURRENT_COLOR}.yml
+    fi
+    
+    # Update main compose file
+    mv docker-compose.\${ROLLBACK_COLOR}.yml docker-compose.prod.yml
+    
+    echo "\$(date): Rollback completed from \$CURRENT_COLOR to \$ROLLBACK_COLOR" >> deployment.log
+else
+    echo "ERROR: No previous deployment to rollback to"
+    exit 1
+fi
 EOF
     
-    log_success "Rollback completed to $ROLLBACK_TAG"
+    log_success "Rollback completed successfully"
 }
 
 # Clean up old images
@@ -467,7 +540,7 @@ register_with_recovery() {
         return
     fi
     
-    # Register the app
+    # Register the app (recovery will handle blue-green naming)
     ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" << EOF
 # Recovery configuration
 RECOVERY_CONFIG="/etc/docker-apps-recovery/apps.conf"

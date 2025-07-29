@@ -2,6 +2,7 @@ version: '3.8'
 
 services:
   sample-6:
+    container_name: sample-6-green
     image: sample-6:latest
     restart: unless-stopped
     ports:

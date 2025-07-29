@@ -4,9 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Dev Ops
 
-- All deployment related changes should be executed by deployment scripts, every time you modify something directly on a server - make sure this change is covered in one of the deployment scripts for future interactions
-- NEVER execute a command that may lead to a downtime of any app on the server without explaining this to the user and getting an explicit permission
-- NEVER use direct SSH commands. Always use `scripts/remote-exec.sh` for executing commands on the EC2 instance
+- All deployment related changes should be executed by deployment scripts, every time you modify something directly on a server - make sure this change is covered in one of the deployment scripts for future interactions.
+- NEVER execute a command that may lead to a downtime of any app on the server without explaining this to the user and getting an explicit permission.
+- NEVER use direct SSH commands. Always use `scripts/remote-exec.sh` for executing commands on the EC2 instance.
+- With every dev-ops change you perform - keep in mind that we many want to bootstrap all our infrastructure on a new AWS account from scratch and will need an easy way to recreate our existing setup, so make sure our current deployment state os always backed by scripts.
 
 ## Architecture Overview
 
