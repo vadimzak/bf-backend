@@ -33,7 +33,7 @@ app.get('/health', (req, res) => {
     status: 'healthy',
     service: 'sample-app',
     timestamp: new Date().toISOString(),
-    version: '1.0.1'
+    version: '1.0.2'
   });
 });
 
