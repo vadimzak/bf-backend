@@ -168,7 +168,8 @@ pre_deployment_health_check() {
                 exit 0
             fi
         fi
-        return 1
+        # User chose to continue, so return success
+        return 0
     fi
 }
 
