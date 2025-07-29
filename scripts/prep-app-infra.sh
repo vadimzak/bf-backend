@@ -98,7 +98,7 @@ AWS_PROFILE=bf aws route53 change-resource-record-sets \
 # Update nginx configuration
 echo "Updating nginx configuration..."
 NGINX_CONFIG="/tmp/nginx.conf.new.$$"
-ssh -i ~/.ssh/sample-app-key.pem ec2-user@sample.vadimzak.com "cat /var/www/sample-app/deploy/nginx.conf" > "$NGINX_CONFIG" 2>/dev/null || {
+ssh -i ~/.ssh/sample-app-key.pem ec2-user@sample.vadimzak.com "cat /var/www/sample-app/nginx.conf" > "$NGINX_CONFIG" 2>/dev/null || {
     echo "❌ Failed to fetch nginx config. Check SSH connectivity."
     exit 1
 }
@@ -180,7 +180,7 @@ EOF
 
     # Upload updated nginx config
     scp -i ~/.ssh/sample-app-key.pem "$NGINX_CONFIG" ec2-user@sample.vadimzak.com:/tmp/nginx.conf.new > /dev/null 2>&1
-    ssh -i ~/.ssh/sample-app-key.pem ec2-user@sample.vadimzak.com "sudo cp /tmp/nginx.conf.new /var/www/sample-app/deploy/nginx.conf" > /dev/null 2>&1
+    ssh -i ~/.ssh/sample-app-key.pem ec2-user@sample.vadimzak.com "sudo cp /tmp/nginx.conf.new /var/www/sample-app/deploy/nginx.conf && sudo cp /tmp/nginx.conf.new /var/www/sample-app/nginx.conf" > /dev/null 2>&1
     rm -f "$NGINX_CONFIG"
 
     # Reload nginx to apply new configuration
