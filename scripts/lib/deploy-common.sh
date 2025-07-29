@@ -333,9 +333,36 @@ sudo docker-compose -f docker-compose.\${NEW_COLOR}.yml up -d
 echo "Waiting for \$NEW_COLOR containers to be healthy..."
 HEALTH_CHECK_RETRIES=30
 HEALTHY=false
+RESTART_COUNT=0
+MAX_RESTARTS=3
 
 for i in \$(seq 1 \$HEALTH_CHECK_RETRIES); do
-    # Try internal health check first
+    # First check if container is restarting
+    CONTAINER_STATUS=\$(sudo docker inspect \${APP_NAME}-\${NEW_COLOR} -f '{{.State.Status}}' 2>/dev/null || echo "missing")
+    CURRENT_RESTART_COUNT=\$(sudo docker inspect \${APP_NAME}-\${NEW_COLOR} -f '{{.RestartCount}}' 2>/dev/null || echo "0")
+    
+    if [ "\$CONTAINER_STATUS" = "missing" ]; then
+        echo "ERROR: Container \${APP_NAME}-\${NEW_COLOR} not found!"
+        break
+    fi
+    
+    if [ "\$CONTAINER_STATUS" = "restarting" ] || [ "\$CURRENT_RESTART_COUNT" -gt "\$RESTART_COUNT" ]; then
+        RESTART_COUNT=\$CURRENT_RESTART_COUNT
+        echo "WARNING: Container is restarting (restart count: \$RESTART_COUNT)"
+        if [ "\$RESTART_COUNT" -ge "\$MAX_RESTARTS" ]; then
+            echo "ERROR: Container has restarted \$RESTART_COUNT times - deployment failed!"
+            break
+        fi
+    fi
+    
+    # Check container health status from Docker
+    DOCKER_HEALTH=\$(sudo docker inspect \${APP_NAME}-\${NEW_COLOR} -f '{{.State.Health.Status}}' 2>/dev/null || echo "none")
+    if [ "\$DOCKER_HEALTH" = "unhealthy" ]; then
+        echo "ERROR: Container reported as unhealthy by Docker!"
+        break
+    fi
+    
+    # Try internal health check
     if sudo docker exec \${APP_NAME}-\${NEW_COLOR} wget -q -O - http://localhost:\${APP_PORT}/health 2>/dev/null | grep -q "healthy"; then
         echo "Health check passed!"
         HEALTHY=true
@@ -345,7 +372,7 @@ for i in \$(seq 1 \$HEALTH_CHECK_RETRIES); do
         HEALTHY=true
         break
     fi
-    echo "Health check attempt \$i/\$HEALTH_CHECK_RETRIES..."
+    echo "Health check attempt \$i/\$HEALTH_CHECK_RETRIES (status: \$CONTAINER_STATUS, docker health: \$DOCKER_HEALTH)..."
     sleep 2
 done
 
@@ -376,9 +403,9 @@ echo "Updating nginx configuration..."
 sudo sed -i "s/\${APP_NAME}-\${CURRENT_COLOR}:\${APP_PORT}/\${APP_NAME}-\${NEW_COLOR}:\${APP_PORT}/g" \$NGINX_CONFIG
 sudo sed -i "s/\${APP_NAME}-cron-\${CURRENT_COLOR}/\${APP_NAME}-cron-\${NEW_COLOR}/g" \$NGINX_CONFIG
 
-# Restart nginx to pick up config changes (brief downtime for nginx only)
-echo "Restarting nginx..."
-cd /var/www/sample-app && sudo docker-compose -f docker-compose-infra.yml restart nginx
+# Reload nginx configuration (zero downtime)
+echo "Reloading nginx configuration..."
+cd /var/www/sample-app && sudo docker-compose -f docker-compose-infra.yml exec -T nginx nginx -s reload
 
 # Give nginx time to switch
 sleep 5
