@@ -108,6 +108,8 @@ if ! grep -q "listen 80 default_server;" "$NGINX_CONFIG"; then
     echo "Adding default catch-all server block..."
     TEMP_CONFIG="/tmp/nginx.conf.temp.$$"
     cat > "$TEMP_CONFIG" << 'EOF'
+resolver 127.0.0.11 valid=30s;
+
 # Default catch-all server block
 # This prevents undefined domains from defaulting to the first server block
 server {
@@ -162,7 +164,8 @@ server {
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
     
     location / {
-        proxy_pass http://$APP_NAME-$APP_NAME-1:$PORT;
+        set \$upstream $APP_NAME-$APP_NAME-1:$PORT;
+        proxy_pass http://\$upstream;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection 'upgrade';
