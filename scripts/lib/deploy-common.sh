@@ -319,9 +319,11 @@ echo "New deployment: \$NEW_COLOR"
 # Create deployment-specific compose file
 cp \$COMPOSE_FILE docker-compose.\${NEW_COLOR}.yml
 
-# Update container names and internal ports in the new compose file
-sed -i "s/container_name: \${APP_NAME}-\${APP_NAME}/container_name: \${APP_NAME}-\${NEW_COLOR}/" docker-compose.\${NEW_COLOR}.yml
-sed -i "s/container_name: \${APP_NAME}-cron-tasks/container_name: \${APP_NAME}-cron-\${NEW_COLOR}/" docker-compose.\${NEW_COLOR}.yml
+# Update container names in the new compose file - handle both green and blue
+sed -i "s/container_name: \${APP_NAME}-green/container_name: \${APP_NAME}-\${NEW_COLOR}/" docker-compose.\${NEW_COLOR}.yml
+sed -i "s/container_name: \${APP_NAME}-blue/container_name: \${APP_NAME}-\${NEW_COLOR}/" docker-compose.\${NEW_COLOR}.yml
+sed -i "s/container_name: \${APP_NAME}-cron-green/container_name: \${APP_NAME}-cron-\${NEW_COLOR}/" docker-compose.\${NEW_COLOR}.yml
+sed -i "s/container_name: \${APP_NAME}-cron-blue/container_name: \${APP_NAME}-cron-\${NEW_COLOR}/" docker-compose.\${NEW_COLOR}.yml
 
 # Start new containers alongside old ones
 echo "Starting \$NEW_COLOR containers..."
@@ -333,7 +335,12 @@ HEALTH_CHECK_RETRIES=30
 HEALTHY=false
 
 for i in \$(seq 1 \$HEALTH_CHECK_RETRIES); do
-    if sudo docker exec \${APP_NAME}-\${NEW_COLOR} curl -f http://localhost:\${APP_PORT}/health >/dev/null 2>&1; then
+    # Try internal health check first
+    if sudo docker exec \${APP_NAME}-\${NEW_COLOR} wget -q -O - http://localhost:\${APP_PORT}/health 2>/dev/null | grep -q "healthy"; then
+        echo "Health check passed!"
+        HEALTHY=true
+        break
+    elif sudo docker exec \${APP_NAME}-\${NEW_COLOR} sh -c "echo 'GET /health HTTP/1.0\r\n\r\n' | nc localhost \${APP_PORT} 2>/dev/null" | grep -q "healthy"; then
         echo "Health check passed!"
         HEALTHY=true
         break
@@ -345,7 +352,12 @@ done
 if [ "\$HEALTHY" != "true" ]; then
     echo "ERROR: New deployment failed health checks"
     echo "Rolling back by stopping \$NEW_COLOR containers..."
-    sudo docker-compose -f docker-compose.\${NEW_COLOR}.yml down
+    # List containers that will be stopped (for safety)
+    echo "Stopping containers:"
+    sudo docker-compose -f docker-compose.\${NEW_COLOR}.yml ps
+    # Stop only the new color containers
+    sudo docker stop \${APP_NAME}-\${NEW_COLOR} \${APP_NAME}-cron-\${NEW_COLOR} 2>/dev/null || true
+    sudo docker rm \${APP_NAME}-\${NEW_COLOR} \${APP_NAME}-cron-\${NEW_COLOR} 2>/dev/null || true
     rm -f docker-compose.\${NEW_COLOR}.yml
     exit 1
 fi
