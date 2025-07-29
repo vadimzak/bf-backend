@@ -646,7 +646,7 @@ APP_LINE="${APP_NAME}|${APP_DIR}|${COMPOSE_FILE}|${HEALTH_ENDPOINT}|${APP_PORT}"
 # Check if app is already registered
 if grep -q "^${APP_NAME}|" "\$RECOVERY_CONFIG" 2>/dev/null; then
     # Update existing entry
-    sudo sed -i "/^${APP_NAME}|/c\\${APP_LINE}" "\$RECOVERY_CONFIG"
+    sudo sed -i "/^${APP_NAME}|/c\\\\${APP_LINE}" "\$RECOVERY_CONFIG"
     echo "Updated recovery registration for ${APP_NAME}"
 else
     # Add new entry
