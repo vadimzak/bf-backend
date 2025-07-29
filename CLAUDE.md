@@ -52,20 +52,6 @@ npm start
 npm install [package-name]
 ```
 
-### Sample-2 App Development
-```bash
-# Navigate to sample-2 app
-cd apps/sample-2
-
-# Development server with hot reload
-npm run dev
-
-# Production server
-npm start
-
-# Install app-specific dependencies
-npm install [package-name]
-```
 
 ### Production Deployment
 
@@ -84,20 +70,6 @@ npm install [package-name]
 ./apps/sample-app/deploy/one-click-deploy.sh --rollback
 ```
 
-#### Sample-2 App
-```bash
-# One-click deployment (main deployment method)
-./apps/sample-2/deploy/one-click-deploy.sh
-
-# Deploy with custom commit message
-./apps/sample-2/deploy/one-click-deploy.sh "Fix UI styling bug"
-
-# Test deployment (dry run)
-./apps/sample-2/deploy/one-click-deploy.sh --dry-run
-
-# Rollback to previous version
-./apps/sample-2/deploy/one-click-deploy.sh --rollback
-```
 
 ## Key File Locations
 
@@ -108,11 +80,6 @@ npm install [package-name]
 - **Deployment Scripts**: `apps/sample-app/deploy/` - All deployment automation
 - **Docker Config**: `apps/sample-app/docker-compose.prod.yml` - Production containers
 
-### Sample-2 App (apps/sample-2/)
-- **Main Server**: `apps/sample-2/server.js` - Express server entry point
-- **Static Content**: `apps/sample-2/public/` - HTML, CSS, JS files
-- **Deployment Scripts**: `apps/sample-2/deploy/` - Deployment automation
-- **Docker Config**: `apps/sample-2/docker-compose.prod.yml` - Production containers
 
 ### Shared
 - **Shared Libraries**: `libs/server-core/` - Reusable server components (currently minimal)
@@ -124,10 +91,6 @@ npm install [package-name]
 - **Health Check**: `/health` endpoint for monitoring
 - **Environment Variables**: Use `.env` files (see `.env.example`)
 
-### Sample-2 App
-- **Production URL**: https://sample-2.vadimzak.com
-- **Health Check**: `/health` endpoint for monitoring
-- **Environment Variables**: Use `.env` files (see `.env.example`)
 
 ### General
 - **AWS Profile**: Only use `bf` AWS profile for deployments
@@ -142,13 +105,6 @@ npm install [package-name]
 - Cron jobs for maintenance tasks in `cron/` directory
 - Health checks and monitoring built-in
 
-### Sample-2 App
-- Minimal static page application
-- Security middleware: Helmet, CORS enabled
-- Static files served from `public/` directory
-- Error handling middleware implemented
-- Health checks built-in
-- Interactive status check functionality
 
 ## Important Considerations
 
@@ -167,6 +123,7 @@ All infrastructure scripts are located in the `scripts/` directory:
 #### Core Scripts
 - **`scripts/add-new-app.sh`** - Creates new applications with complete structure
 - **`scripts/deploy-app.sh`** - Universal deployment script for all apps
+- **`scripts/remove-app.sh`** - Removes apps from repository and production
 - **`scripts/lib/deploy-common.sh`** - Shared deployment functions and utilities
 - **`scripts/renew-wildcard-cert.sh`** - Renews the wildcard SSL certificate
 
@@ -202,9 +159,32 @@ cd apps/app-name
 
 # Examples:
 ./scripts/deploy-app.sh sample-app "Fix authentication bug"
-./scripts/deploy-app.sh sample-2 --dry-run
+./scripts/deploy-app.sh my-app --dry-run
 ./scripts/deploy-app.sh my-app --rollback
 ```
+
+### Removing Apps
+To remove an app from both the repository and production:
+```bash
+# With confirmation prompts
+./scripts/remove-app.sh app-name
+
+# Without confirmation prompts (force mode)
+./scripts/remove-app.sh --force app-name
+./scripts/remove-app.sh -f app-name
+
+# Show help
+./scripts/remove-app.sh --help
+```
+
+The removal script will:
+- Stop and remove all Docker containers for the app
+- Remove Docker images and volumes
+- Delete the app directory from the production server
+- Remove the app's nginx configuration blocks
+- Delete the DNS A record
+- Remove the app directory from the repository
+- Commit the removal to git
 
 ### App Configuration
 Each app requires a `deploy.config` file in its directory:
