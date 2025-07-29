@@ -355,6 +355,9 @@ in_services && /^    # container_name is set dynamically/ {
 { print }
 ' docker-compose.\${NEW_COLOR}.yml > docker-compose.\${NEW_COLOR}.yml.tmp && mv docker-compose.\${NEW_COLOR}.yml.tmp docker-compose.\${NEW_COLOR}.yml
 
+# Remove port mappings for blue-green deployment (nginx handles routing)
+sed -i '/^    ports:/,/^    [^ ]/{/^    ports:/d; /^      - /d}' docker-compose.\${NEW_COLOR}.yml
+
 # Validate that we're not about to recreate existing containers
 echo "Validating container names..."
 EXPECTED_CONTAINERS="\${APP_NAME}-\${NEW_COLOR} \${APP_NAME}-cron-\${NEW_COLOR}"
