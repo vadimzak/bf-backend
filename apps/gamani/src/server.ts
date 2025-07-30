@@ -106,9 +106,33 @@ const dynamodb = new AWS.DynamoDB.DocumentClient({
 // Initialize Google Generative AI
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || '');
 
-// Middleware - Configure CSP to allow Firebase auth (temporarily disable for testing)
+// Middleware - Configure CSP to allow Firebase auth
 app.use(helmet({
-  contentSecurityPolicy: false
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: [
+        "'self'",
+        "'unsafe-inline'",
+        "'unsafe-eval'",
+        "https://apis.google.com",
+        "https://www.gstatic.com",
+        "https://www.googleapis.com",
+        "https://securetoken.googleapis.com",
+        "https://identitytoolkit.googleapis.com",
+        "https://firebase.googleapis.com"
+      ],
+      imgSrc: ["'self'", "data:", "https:"],
+      baseSrc: ["'self'"],
+      fontSrc: ["'self'", "https:", "data:"],
+      formAction: ["'self'"],
+      frameAncestors: ["'self'"],
+      objectSrc: ["'none'"],
+      scriptSrcAttr: ["'none'"],
+      upgradeInsecureRequests: []
+    }
+  }
 }));
 
 app.use(cors({

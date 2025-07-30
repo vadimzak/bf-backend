@@ -20,7 +20,10 @@ RUN cd apps/gamani && npx tsc --skipLibCheck
 
 # Build the frontend client
 WORKDIR /workspace/apps/gamani/client
-RUN npm ci && npm run build
+# Install client dependencies separately to ensure clean build
+RUN npm ci --prefer-offline --no-audit
+# Build the client with explicit output
+RUN npm run build
 
 # Production stage
 FROM node:18-alpine AS production
