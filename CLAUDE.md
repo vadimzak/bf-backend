@@ -58,7 +58,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Monorepo**: NX workspace with multiple apps
 - **Main Apps**: 
   - `apps/sample-app/` - Main sample application
-  - `apps/sample-6/` - Additional sample app
 - **Database**: AWS DynamoDB
 - **Health Checks**: `/health` endpoint required
 
@@ -90,6 +89,12 @@ If you want to save ~$3.60/month and use port 30443 for HTTPS, add `--no-seconda
 # Deploy individual app
 ./scripts/k8s/deploy-app.sh <app-name>
 
+# Delete individual app (including ECR repository)
+./scripts/k8s/delete-app.sh <app-name>
+
+# Delete app but keep ECR repository
+./scripts/k8s/delete-app.sh <app-name> --keep-ecr
+
 # Check cluster status
 ./scripts/k8s/cluster-status.sh
 ```
@@ -107,6 +112,24 @@ If you want to save ~$3.60/month and use port 30443 for HTTPS, add `--no-seconda
 
 # Fix DNS issues
 ./scripts/k8s/fix-dns.sh --use-ip
+```
+
+### ECR Repository Management
+```bash
+# Delete ECR repositories for specific apps
+./scripts/k8s/delete-app-ecr.sh --app <app-name>
+
+# Delete multiple ECR repositories
+./scripts/k8s/delete-app-ecr.sh --app app1 --app app2
+
+# Force delete repositories even with images
+./scripts/k8s/delete-app-ecr.sh --force --app <app-name>
+
+# Show what would be deleted (dry run)
+./scripts/k8s/delete-app-ecr.sh --dry-run
+
+# Delete all detected app ECR repositories
+./scripts/k8s/delete-app-ecr.sh --force
 ```
 
 ### Monitoring Stack
@@ -182,13 +205,15 @@ Key components:
 - `bootstrap-cluster.sh` - Create KOPS cluster (secondary IP enabled by default, use `--no-secondary-ip` to disable)
 - `configure-apps.sh` - Setup ECR and build images
 - `deploy-app.sh` - Deploy app to Kubernetes (fixed for NX monorepo)
+- `delete-app.sh` - Delete app from Kubernetes and ECR repository
+- `delete-app-ecr.sh` - Delete ECR repositories for specific apps
 - `setup-haproxy.sh` - Configure HTTP on port 80
 - `setup-haproxy-https.sh` - Configure HTTP/HTTPS with secondary IP
 - `setup-secondary-ip.sh` - Setup secondary IP for HTTPS on port 443 (supports `--dry-run`)
 - `cleanup-secondary-ip.sh` - Clean up secondary IP resources and unused Elastic IPs
 - `diagnose-secondary-ip.sh` - Diagnose secondary IP setup issues
 - `quick-start-full.sh` - One-command full setup (secondary IP enabled by default)
-- `teardown-cluster.sh` - Remove cluster (now includes secondary IP cleanup)
+- `teardown-cluster.sh` - Remove cluster (now includes ECR and secondary IP cleanup)
 - `cluster-status.sh` - Health check
 - `update-wildcard-dns.sh` - Update DNS records
 - `update-app-dns-secondary.sh` - Update DNS to use secondary IP
@@ -214,6 +239,12 @@ Key components:
   - Added HTTP-only mode support for Let's Encrypt rate limit situations:
     - New `toggle-https-redirect.sh` script to enable/disable HTTPS redirect
     - Added `--http-only` flag to `configure-apps.sh` for generating HTTP-only ingress
+- **ECR Cleanup (July 30)**:
+  - Added ECR repository deletion functions to `k8s-common.sh`
+  - Created `delete-app.sh` script for complete app deletion (K8s + ECR)
+  - Created `delete-app-ecr.sh` script for ECR-only cleanup
+  - Integrated ECR cleanup into `teardown-cluster.sh`
+  - All ECR scripts support dry-run mode and force deletion
 
 ### Application Configuration
 Each app needs:
@@ -229,12 +260,9 @@ Each app needs:
 ### With Secondary IP (HTTPS on port 443):
 - http://sample.vadimzak.com
 - https://sample.vadimzak.com
-- http://sample-6.vadimzak.com
-- https://sample-6.vadimzak.com
 
 ### With HAProxy (HTTP only):
 - http://sample.vadimzak.com
-- http://sample-6.vadimzak.com
 - https://sample.vadimzak.com:30443 (non-standard port)
 
 ### Without HAProxy:
@@ -367,3 +395,7 @@ When migrating from Docker Compose:
 3. Use NodePort services for ingress
 4. Configure HAProxy for standard ports
 5. Update DNS to point to master node IP
+
+## MISC
+
+- Use AWS Secrets Manager for secrets instead of K8S Secrets

@@ -5,8 +5,12 @@
   "main": "dist/server.js",
   "scripts": {
     "start": "node dist/server.js",
-    "dev": "ts-node src/server.ts",
+    "dev": "concurrently \"ts-node src/server.ts\" \"cd client && npm run dev\"",
+    "dev:server": "ts-node src/server.ts",
+    "dev:client": "cd client && npm run dev",
     "build": "tsc",
+    "build:client": "cd client && npm run build",
+    "build:all": "npm run build && npm run build:client",
     "watch": "tsc --watch",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -31,6 +35,7 @@
   },
   "devDependencies": {
     "nodemon": "^2.0.22",
-    "ts-node": "^10.9.2"
+    "ts-node": "^10.9.2",
+    "concurrently": "^8.2.2"
   }
 }

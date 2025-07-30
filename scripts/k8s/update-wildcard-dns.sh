@@ -24,5 +24,4 @@ log_info "It may take 5-15 minutes for DNS to propagate"
 echo
 echo "Applications will be accessible at:"
 echo "  https://sample.vadimzak.com"
-echo "  https://sample-6.vadimzak.com"
 echo "  etc..."

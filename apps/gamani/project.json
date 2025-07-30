@@ -21,12 +21,14 @@
       }
     },
     "build": {
-      "executor": "nx:run-commands",
+      "executor": "@nx/js:tsc",
       "options": {
-        "command": "tsc",
-        "cwd": "apps/gamani"
+        "outputPath": "dist/apps/gamani",
+        "main": "apps/gamani/src/server.ts",
+        "tsConfig": "apps/gamani/tsconfig.build.json",
+        "assets": ["apps/gamani/src/assets"]
       },
-      "outputs": ["apps/gamani/dist"]
+      "outputs": ["{options.outputPath}"]
     },
     "build-client": {
       "executor": "nx:run-commands",
@@ -34,7 +36,7 @@
         "command": "cd client && npm run build",
         "cwd": "apps/gamani"
       },
-      "outputs": ["apps/gamani/client/dist"]
+      "outputs": ["{projectRoot}/client/dist"]
     },
     "dev-client": {
       "executor": "nx:run-commands",

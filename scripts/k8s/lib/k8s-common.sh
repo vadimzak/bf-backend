@@ -252,6 +252,72 @@ docker_ecr_login() {
         --password-stdin "$registry"
 }
 
+# Delete ECR repository
+delete_ecr_repository() {
+    local repo_name="$1"
+    local force="${2:-false}"
+    
+    if ! aws ecr describe-repositories \
+        --repository-names "$repo_name" \
+        --profile "$AWS_PROFILE" \
+        --region "$ECR_REGION" >/dev/null 2>&1; then
+        log_debug "ECR repository $repo_name does not exist"
+        return 0
+    fi
+    
+    log_info "Deleting ECR repository: $repo_name"
+    
+    if [[ "$force" == "true" ]]; then
+        # Force delete with all images
+        aws ecr delete-repository \
+            --repository-name "$repo_name" \
+            --force \
+            --profile "$AWS_PROFILE" \
+            --region "$ECR_REGION" >/dev/null
+    else
+        # Delete only if empty
+        aws ecr delete-repository \
+            --repository-name "$repo_name" \
+            --profile "$AWS_PROFILE" \
+            --region "$ECR_REGION" >/dev/null
+    fi
+}
+
+# List all ECR repositories
+list_ecr_repositories() {
+    aws ecr describe-repositories \
+        --query 'repositories[].repositoryName' \
+        --output text \
+        --profile "$AWS_PROFILE" \
+        --region "$ECR_REGION" 2>/dev/null || echo ""
+}
+
+# Delete all app ECR repositories
+delete_app_ecr_repositories() {
+    local apps="${1:-}"
+    local force="${2:-false}"
+    
+    if [[ -z "$apps" ]]; then
+        # Auto-detect apps by finding deploy.config files
+        local project_root="$(cd "$SCRIPT_DIR/../.." && pwd)"
+        apps=$(find "$project_root/apps" -name "deploy.config" -type f | \
+            while read -r config; do
+                basename "$(dirname "$config")"
+            done)
+    fi
+    
+    if [[ -z "$apps" ]]; then
+        log_warning "No apps found to clean up ECR repositories"
+        return 0
+    fi
+    
+    log_info "Cleaning up ECR repositories for apps: $apps"
+    
+    for app in $apps; do
+        delete_ecr_repository "$app" "$force"
+    done
+}
+
 # Add security group rule
 add_security_group_rule() {
     local port="$1"
@@ -295,5 +361,5 @@ export -f log_info log_error log_warning log_debug
 export -f command_exists verify_prerequisites
 export -f wait_for cluster_exists get_cluster_status
 export -f get_master_ip update_dns_record
-export -f get_ecr_registry ensure_ecr_repository docker_ecr_login
+export -f get_ecr_registry ensure_ecr_repository docker_ecr_login delete_ecr_repository list_ecr_repositories delete_app_ecr_repositories
 export -f add_security_group_rule

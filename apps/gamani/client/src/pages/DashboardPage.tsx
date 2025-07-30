@@ -1,10 +1,20 @@
 import { observer } from 'mobx-react-lite';
 import { useStore } from '../stores';
 import { Navigate } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { fetchHealthStatus, displayServiceStatus, HealthResponse } from '../utils/serverUtils';
 
 const DashboardPage = observer(() => {
   const { authStore, appStore } = useStore();
+  const [healthData, setHealthData] = useState<HealthResponse | null>(null);
+  const [healthLoading, setHealthLoading] = useState(true);
+
+  console.log('🔧 [DASHBOARD] DashboardPage rendering - authStore.isAuthenticated:', authStore.isAuthenticated);
+  console.log('🔧 [DASHBOARD] AuthStore state:', { 
+    user: authStore.user ? { email: authStore.user.email, uid: authStore.user.uid } : null,
+    loading: authStore.loading,
+    error: authStore.error
+  });
 
   useEffect(() => {
     if (authStore.isAuthenticated) {
@@ -12,11 +22,33 @@ const DashboardPage = observer(() => {
     }
   }, [authStore.isAuthenticated, appStore]);
 
+  useEffect(() => {
+    const loadHealthData = async () => {
+      try {
+        const health = await fetchHealthStatus();
+        setHealthData(health);
+      } catch (error) {
+        console.error('Failed to fetch health data:', error);
+      } finally {
+        setHealthLoading(false);
+      }
+    };
+
+    loadHealthData();
+    // Refresh health data every 30 seconds
+    const interval = setInterval(loadHealthData, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   if (!authStore.isAuthenticated) {
+    console.log('❌ [DASHBOARD] User is NOT authenticated, redirecting to login');
     return <Navigate to="/login" replace />;
   }
 
+  console.log('✅ [DASHBOARD] User is authenticated, showing dashboard');
+
   const handleSignOut = () => {
+    console.log('🚪 [DASHBOARD] User clicked sign out');
     authStore.signOut();
   };
 
@@ -38,6 +70,48 @@ const DashboardPage = observer(() => {
       </div>
 
       <div className="grid gap-6">
+        <div className="bg-card border border-border rounded-lg p-6">
+          <h2 className="text-xl font-semibold mb-4">Server Status</h2>
+          
+          {healthLoading && (
+            <div>Loading server status...</div>
+          )}
+
+          {healthData && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div>
+                  <span className="text-muted-foreground">App:</span>
+                  <div className="font-mono">{healthData.data.name} v{healthData.data.version}</div>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Uptime:</span>
+                  <div className="font-mono">{healthData.data.uptimeFormatted}</div>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Environment:</span>
+                  <div className="font-mono">{healthData.data.environment}</div>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Core:</span>
+                  <div className="font-mono">{healthData.data.serverCore}</div>
+                </div>
+              </div>
+              
+              <div>
+                <span className="text-muted-foreground">Services:</span>
+                <div className="text-sm mt-1">
+                  {displayServiceStatus(healthData.data.services)}
+                </div>
+              </div>
+              
+              <div className="text-xs text-muted-foreground">
+                Last updated: {new Date(healthData.timestamp).toLocaleTimeString()}
+              </div>
+            </div>
+          )}
+        </div>
+
         <div className="bg-card border border-border rounded-lg p-6">
           <h2 className="text-xl font-semibold mb-4">Your Items</h2>
           

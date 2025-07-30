@@ -12,8 +12,11 @@ COPY . .
 # Install all dependencies
 RUN npm ci
 
-# Build the workspace (backend TypeScript and frontend)
-RUN npm run build
+# Build the workspace dependencies (but skip gamani)
+RUN npx nx run-many --target=build --projects=server-core
+
+# Build gamani specifically using the compiled libs
+RUN cd apps/gamani && npx tsc --skipLibCheck
 
 # Build the frontend client
 WORKDIR /workspace/apps/gamani/client

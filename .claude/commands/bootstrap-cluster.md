@@ -1,0 +1,1 @@
+delete the new cluster with the given name

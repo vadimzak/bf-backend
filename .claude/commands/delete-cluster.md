@@ -1,0 +1,1 @@
+bootstrap a new cluster with the given name

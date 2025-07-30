@@ -1,0 +1,1 @@
+run the app locally in development mode

@@ -19,9 +19,6 @@ log_info "Master node IP: $master_ip"
 # List of app subdomains to update
 SUBDOMAINS=(
     "sample"
-    "sample-6"
-    "sample-3"
-    "sample-4"
 )
 
 # Update each subdomain

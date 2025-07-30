@@ -81,6 +81,14 @@ delete_applications() {
     done
 }
 
+# Clean up ECR repositories
+clean_ecr_repositories() {
+    log_info "Cleaning up ECR repositories..."
+    
+    # Use force delete to remove repositories even with images
+    delete_app_ecr_repositories "" "true"
+}
+
 # Delete cluster
 delete_cluster() {
     log_info "Deleting KOPS cluster..."
@@ -261,6 +269,7 @@ main() {
     
     # Teardown steps
     delete_applications
+    clean_ecr_repositories  # Clean up ECR repositories after deleting applications
     clean_secondary_ip_resources  # Clean up secondary IP before deleting cluster
     delete_cluster
     clean_dns_records

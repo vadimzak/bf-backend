@@ -158,24 +158,33 @@ install_monitoring() {
         --set prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.resources.requests.storage="20Gi" \
         --wait --timeout=10m
     
-    # Install Loki
+    # Install Loki (using loki-stack for simpler deployment)
+    # Note: Using loki-stack instead of loki chart due to newer loki chart requiring object storage for scalable mode
     log_info "Installing Loki for log aggregation..."
-    helm upgrade --install "$LOKI_RELEASE" grafana/loki \
+    helm upgrade --install "$LOKI_RELEASE" grafana/loki-stack \
         --namespace "$NAMESPACE" \
-        --set loki.auth_enabled=false \
-        --set loki.server.http_listen_port=3100 \
-        --set loki.ingester.lifecycler.ring.kvstore.store="inmemory" \
-        --set loki.ingester.chunk_idle_period="3m" \
-        --set loki.ingester.chunk_block_size=262144 \
-        --set loki.ingester.chunk_retain_period="1m" \
-        --set loki.storage_config.boltdb_shipper.active_index_directory="/loki/boltdb-shipper-active" \
-        --set loki.storage_config.boltdb_shipper.cache_location="/loki/boltdb-shipper-cache" \
-        --set loki.storage_config.filesystem.directory="/loki/chunks" \
-        --set loki.limits_config.enforce_metric_name=false \
-        --set loki.limits_config.reject_old_samples=true \
-        --set loki.limits_config.reject_old_samples_max_age="168h" \
-        --set persistence.enabled=true \
-        --set persistence.size="10Gi" \
+        --set loki.enabled=true \
+        --set promtail.enabled=true \
+        --set grafana.enabled=false \
+        --set prometheus.enabled=false \
+        --set loki.persistence.enabled=true \
+        --set loki.persistence.size=10Gi \
+        --set loki.config.auth_enabled=false \
+        --set loki.config.ingester.chunk_idle_period=3m \
+        --set loki.config.ingester.chunk_block_size=262144 \
+        --set loki.config.ingester.chunk_retain_period=1m \
+        --set loki.config.ingester.max_transfer_retries=0 \
+        --set loki.config.storage_config.boltdb_shipper.active_index_directory=/data/loki/boltdb-shipper-active \
+        --set loki.config.storage_config.boltdb_shipper.cache_location=/data/loki/boltdb-shipper-cache \
+        --set loki.config.storage_config.filesystem.directory=/data/loki/chunks \
+        --set loki.config.schema_config.configs[0].from=2020-10-24 \
+        --set loki.config.schema_config.configs[0].store=boltdb-shipper \
+        --set loki.config.schema_config.configs[0].object_store=filesystem \
+        --set loki.config.schema_config.configs[0].schema=v11 \
+        --set loki.config.schema_config.configs[0].index.prefix=index_ \
+        --set loki.config.schema_config.configs[0].index.period=24h \
+        --set loki.config.limits_config.reject_old_samples=true \
+        --set loki.config.limits_config.reject_old_samples_max_age=168h \
         --wait --timeout=10m
     
     # Wait for pods to be ready
