@@ -1,16 +1,19 @@
-# Multi-stage build for optimized production image
+# Multi-stage build for NX monorepo application
 FROM node:18-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache python3 make g++
 
-WORKDIR /app
+WORKDIR /workspace
 
-# Copy package files
-COPY package*.json ./
+# Copy entire workspace
+COPY . .
 
-# Install all dependencies (including devDependencies for building)
-RUN npm install --production && npm cache clean --force
+# Install all dependencies
+RUN npm ci
+
+# Build the workspace (this will build server-core and other dependencies)
+RUN npm run build
 
 # Production stage
 FROM node:18-alpine AS production
@@ -22,14 +25,15 @@ RUN addgroup -g 1001 -S nodejs && \
 # Set working directory
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Copy the app code
+COPY --chown=nodeuser:nodejs apps/sample-app/ ./
 
-# Copy node_modules from builder stage
-COPY --from=builder /app/node_modules ./node_modules
+# Copy dependencies from workspace but exclude @bf-backend symlinks
+COPY --from=builder --chown=nodeuser:nodejs /workspace/node_modules ./node_modules
+RUN rm -rf ./node_modules/@bf-backend
 
-# Copy application code
-COPY --chown=nodeuser:nodejs . .
+# Copy built @bf-backend libraries from dist
+COPY --from=builder --chown=nodeuser:nodejs /workspace/dist/libs ./node_modules/@bf-backend
 
 # Create logs directory
 RUN mkdir -p logs && chown nodeuser:nodejs logs

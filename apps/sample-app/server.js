@@ -2,6 +2,7 @@ const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
 const path = require('path');
+const { serverCore } = require('@bf-backend/server-core');
 require('dotenv').config();
 
 const app = express();
@@ -33,7 +34,8 @@ app.get('/health', (req, res) => {
     status: 'healthy',
     service: 'sample-app',
     timestamp: new Date().toISOString(),
-    version: '1.0.3'
+    version: '1.0.3',
+    serverCore: serverCore()
   });
 });
 
