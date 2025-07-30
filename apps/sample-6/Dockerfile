@@ -4,14 +4,14 @@ FROM node:18-alpine
 # Set working directory
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Copy package files from the app directory
+COPY apps/sample-6/package*.json ./
 
 # Install dependencies
 RUN npm install --only=production
 
-# Copy application files
-COPY . .
+# Copy application files from the app directory
+COPY apps/sample-6/ .
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs

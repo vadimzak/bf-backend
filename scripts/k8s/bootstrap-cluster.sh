@@ -372,10 +372,10 @@ deploy_cluster() {
         cp "$HOME/.kube/config" "$HOME/.kube/config.backup" 2>/dev/null || true
         
         # Add note about DNS
-        log_warning "If you experience DNS resolution issues, you can temporarily use:"
-        log_warning "  kubectl config set-cluster $CLUSTER_NAME --server=https://$master_ip --insecure-skip-tls-verify=true"
-        log_warning "To restore DNS-based access:"
-        log_warning "  kubectl config set-cluster $CLUSTER_NAME --server=https://api.$CLUSTER_NAME"
+        log_info "If you experience DNS resolution issues, you can temporarily use:"
+        log_info "  kubectl config set-cluster $CLUSTER_NAME --server=https://$master_ip --insecure-skip-tls-verify=true"
+        log_info "To restore DNS-based access:"
+        log_info "  kubectl config set-cluster $CLUSTER_NAME --server=https://api.$CLUSTER_NAME"
     fi
 }
 

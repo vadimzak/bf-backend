@@ -761,7 +761,7 @@ EOF
     echo "2. If HAProxy not installed: ./scripts/k8s/setup-haproxy.sh"
     echo "3. Deploy applications: ./scripts/k8s/deploy-app.sh <app-name>"
     echo
-    echo "Cost: ~$3.60/month for the additional Elastic IP"
+    echo "Cost: ~\$3.60/month for the additional Elastic IP"
 }
 
 # Run main function

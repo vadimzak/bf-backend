@@ -37,6 +37,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Make sure to have timeouts on commands that may take long time or get stuck, there should be no case where our scripts hang.
 - Avoid long (2+ sec) sleeps when waiting for something to be ready, use retry loops instead 
 - Play an error sound when scripts fail
+- When using `set -u` (or `set -euo pipefail`), be careful with dollar signs in strings - escape them (`\$`) or use single quotes to avoid unbound variable errors (e.g., `echo "Cost: \$3.60"` not `echo "Cost: $3.60"`)
 
 ## Architecture Overview
 
@@ -78,6 +79,9 @@ If you want to save ~$3.60/month and use port 30443 for HTTPS, add `--no-seconda
 ```bash
 # Configure all apps (build, push to ECR, generate manifests)
 ./scripts/k8s/configure-apps.sh
+
+# Configure apps with HTTP-only ingress (no HTTPS redirect)
+./scripts/k8s/configure-apps.sh --http-only
 
 # Deploy individual app
 ./scripts/k8s/deploy-app.sh <app-name>
@@ -151,6 +155,7 @@ Key components:
 - `cluster-status.sh` - Health check
 - `update-wildcard-dns.sh` - Update DNS records
 - `update-app-dns-secondary.sh` - Update DNS to use secondary IP
+- `toggle-https-redirect.sh` - Enable/disable HTTPS redirect for all apps (useful during Let's Encrypt rate limits)
 
 **Recent Improvements (July 2025):**
 - Secondary IP now ENABLED BY DEFAULT (opt-out with `--no-secondary-ip`)
@@ -164,11 +169,14 @@ Key components:
 - Improved error messages with specific resolution steps
 - Added comprehensive Elastic IP troubleshooting guide
 - **Bootstrap Optimizations (July 30)**:
-  - Fixed unbound variable bug in setup-secondary-ip.sh
+  - Fixed unbound variable bug in setup-secondary-ip.sh (line 764: `$3.60` interpreted as `$3` + `.60`)
   - Reduced retries from 3 to 2 (saves ~8 seconds)
   - Removed redundant verification (saves ~30 seconds)
   - Added timestamps to all log messages (configurable via LOG_TIMESTAMP_FORMAT)
   - Overall bootstrap time reduced by ~2.5-3 minutes
+  - Added HTTP-only mode support for Let's Encrypt rate limit situations:
+    - New `toggle-https-redirect.sh` script to enable/disable HTTPS redirect
+    - Added `--http-only` flag to `configure-apps.sh` for generating HTTP-only ingress
 
 ### Application Configuration
 Each app needs:
@@ -229,6 +237,30 @@ npm run dev
 3. **DNS**: Uses wildcard DNS (*.vadimzak.com)
 4. **Security Groups**: Managed by KOPS, additional ports via scripts
 5. **SSL/TLS**: Full HTTPS support available with secondary IP solution
+
+## Handling Let's Encrypt Rate Limits
+
+When hitting Let's Encrypt rate limits, you can temporarily allow HTTP-only access:
+
+### Option 1: Toggle HTTPS Redirect for Existing Apps
+```bash
+# Disable HTTPS redirect (allow HTTP access)
+./scripts/k8s/toggle-https-redirect.sh --disable-https
+
+# Re-enable HTTPS redirect when rate limits are resolved
+./scripts/k8s/toggle-https-redirect.sh --enable-https
+```
+
+### Option 2: Generate HTTP-Only Ingress from Start
+```bash
+# Generate manifests without HTTPS/TLS configuration
+./scripts/k8s/configure-apps.sh --http-only
+
+# Deploy as normal
+./scripts/k8s/deploy-app.sh <app-name>
+```
+
+**Note**: HTTP-only mode should be temporary. Re-enable HTTPS as soon as rate limits allow.
 
 ## Troubleshooting
 

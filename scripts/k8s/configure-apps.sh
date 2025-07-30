@@ -15,6 +15,7 @@ set_error_trap
 BUILD_IMAGES=true
 PUSH_IMAGES=true
 GENERATE_MANIFESTS=true
+HTTP_ONLY=false
 APPS=()
 
 # Parse command line arguments
@@ -36,12 +37,17 @@ while [[ $# -gt 0 ]]; do
             APPS+=("$2")
             shift 2
             ;;
+        --http-only)
+            HTTP_ONLY=true
+            shift
+            ;;
         --help)
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
             echo "  --no-build       Skip building Docker images"
             echo "  --no-push        Skip pushing images to ECR"
             echo "  --no-manifests   Skip generating K8s manifests"
+            echo "  --http-only      Generate ingress without HTTPS redirect (for rate limit situations)"
             echo "  --app APP        Configure specific app (can be used multiple times)"
             echo "  --help           Show this help message"
             exit 0
@@ -232,7 +238,33 @@ spec:
 EOF
     
     # Generate Ingress manifest
-    cat > "$manifests_dir/ingress.yaml" <<EOF
+    if [[ "$HTTP_ONLY" == "true" ]]; then
+        log_warning "Generating HTTP-only ingress for $APP_NAME (no HTTPS redirect)"
+        cat > "$manifests_dir/ingress.yaml" <<EOF
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ${APP_NAME}
+  namespace: apps
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: ${APP_DOMAIN}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: ${APP_NAME}
+            port:
+              number: 80
+EOF
+    else
+        cat > "$manifests_dir/ingress.yaml" <<EOF
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -260,6 +292,7 @@ spec:
             port:
               number: 80
 EOF
+    fi
     
     # Generate kustomization.yaml for easy deployment
     cat > "$manifests_dir/kustomization.yaml" <<EOF
