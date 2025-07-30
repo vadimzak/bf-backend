@@ -106,33 +106,9 @@ const dynamodb = new AWS.DynamoDB.DocumentClient({
 // Initialize Google Generative AI
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || '');
 
-// Middleware - Configure CSP to allow Firebase auth
+// Middleware - Disable CSP completely to allow Firebase auth
 app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: [
-        "'self'",
-        "'unsafe-inline'",
-        "'unsafe-eval'",
-        "https://apis.google.com",
-        "https://www.gstatic.com",
-        "https://www.googleapis.com",
-        "https://securetoken.googleapis.com",
-        "https://identitytoolkit.googleapis.com",
-        "https://firebase.googleapis.com"
-      ],
-      imgSrc: ["'self'", "data:", "https:"],
-      baseSrc: ["'self'"],
-      fontSrc: ["'self'", "https:", "data:"],
-      formAction: ["'self'"],
-      frameAncestors: ["'self'"],
-      objectSrc: ["'none'"],
-      scriptSrcAttr: ["'none'"],
-      upgradeInsecureRequests: []
-    }
-  }
+  contentSecurityPolicy: false
 }));
 
 app.use(cors({
@@ -144,7 +120,7 @@ app.use(cors({
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-app.use(express.static(path.join(__dirname, '..', 'client', 'dist')));
+app.use(express.static(path.join(__dirname, '..', '..', '..', '..', 'client', 'dist')));
 
 // Request logging middleware
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -209,7 +185,7 @@ const authenticateFirebase = async (req: AuthenticatedRequest, res: Response, ne
 
 // Public routes
 app.get('/', (req: Request, res: Response) => {
-  res.sendFile(path.join(__dirname, '..', 'client', 'dist', 'index.html'));
+  res.sendFile(path.join(__dirname, '..', '..', '..', '..', 'client', 'dist', 'index.html'));
 });
 
 // Health check
@@ -313,7 +289,7 @@ app.post('/api/protected/ai/generate', async (req: AuthenticatedRequest, res: Re
 
 // Catch-all handler for React Router
 app.get('*', (req: Request, res: Response) => {
-  res.sendFile(path.join(__dirname, '..', 'client', 'dist', 'index.html'));
+  res.sendFile(path.join(__dirname, '..', '..', '..', '..', 'client', 'dist', 'index.html'));
 });
 
 // Error handling middleware

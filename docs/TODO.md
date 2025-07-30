@@ -8,6 +8,7 @@
 - make ECR only persist last 10 images
 - ts-node -> tsx
 - upgrade AWS SDK
+- remove HTTP only mode
 
 - cleanup fallback flows deployment scripts
 - make sure all packages are latest version

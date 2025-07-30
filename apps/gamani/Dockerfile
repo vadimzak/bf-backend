@@ -16,7 +16,8 @@ RUN npm ci
 RUN npx nx run-many --target=build --projects=server-core
 
 # Build gamani specifically using the compiled libs
-RUN cd apps/gamani && npx tsc --skipLibCheck
+WORKDIR /workspace/apps/gamani
+RUN rm -rf dist && npx tsc --skipLibCheck
 
 # Build the frontend client
 WORKDIR /workspace/apps/gamani/client
@@ -40,7 +41,7 @@ COPY --chown=nodeuser:nodejs apps/gamani/src ./src
 COPY --chown=nodeuser:nodejs apps/gamani/package.json ./
 COPY --chown=nodeuser:nodejs apps/gamani/tsconfig.json ./
 
-# Copy built backend from workspace
+# Copy built backend from workspace (ensure latest build)
 COPY --from=builder --chown=nodeuser:nodejs /workspace/apps/gamani/dist ./dist
 
 # Copy dependencies from workspace but exclude @bf-backend symlinks
@@ -67,4 +68,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 USER nodeuser
 
 # Start the application
-CMD ["node", "dist/server.js"]
+CMD ["node", "dist/apps/gamani/src/server.js"]
