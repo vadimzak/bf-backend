@@ -7,10 +7,13 @@ This document describes the Kubernetes infrastructure setup using KOPS on AWS wi
 
 ### One-Command Setup
 
-#### Option A: Standard Ports (Recommended)
+#### Option A: Standard Ports with HTTPS (Recommended)
 ```bash
-# Complete setup with HAProxy for standard ports
+# Complete setup with secondary IP for HTTPS on port 443 (default)
 ./scripts/k8s/quick-start-full.sh
+
+# Or without secondary IP (HTTPS only on port 30443)
+./scripts/k8s/quick-start-full.sh --no-secondary-ip
 ```
 
 This will:
@@ -18,7 +21,10 @@ This will:
 - Bootstrap the Kubernetes cluster
 - Install ingress controller and cert-manager
 - Configure applications
-- Setup HAProxy for standard ports (80/443)
+- Setup secondary IP and HAProxy for standard ports (80/443) - enabled by default
+- Or setup HAProxy for HTTP only (if --no-secondary-ip is used)
+
+**Note**: Secondary IP is now ENABLED BY DEFAULT for HTTPS on port 443. If you encounter Elastic IP limit issues, see [Elastic IP Troubleshooting Guide](./K8S_ELASTIC_IP_TROUBLESHOOTING.md).
 
 #### Option B: Basic Setup (Non-standard Ports)
 ```bash

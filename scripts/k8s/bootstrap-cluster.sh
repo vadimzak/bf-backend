@@ -14,8 +14,8 @@ set_error_trap
 DRY_RUN=false
 SKIP_PREREQUISITES=false
 SKIP_DNS_CHECK=false
-# Default to true for single-node clusters (will be auto-enabled later if NODE_COUNT=0)
-SETUP_SECONDARY_IP=false
+# Default to true for single-node clusters
+SETUP_SECONDARY_IP=true
 NO_SECONDARY_IP=false
 
 # Parse command line arguments
@@ -34,25 +34,27 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --with-secondary-ip)
+            # Kept for backwards compatibility
             SETUP_SECONDARY_IP=true
             shift
             ;;
-        --no-secondary-ip)
+        --no-secondary-ip|--without-secondary-ip)
+            SETUP_SECONDARY_IP=false
             NO_SECONDARY_IP=true
             shift
             ;;
         --help)
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
-            echo "  --dry-run            Show what would be done without making changes"
-            echo "  --skip-prerequisites Skip prerequisites check"
-            echo "  --skip-dns-check     Skip DNS propagation check"
-            echo "  --with-secondary-ip  Force setup secondary IP for HTTPS on port 443"
-            echo "  --no-secondary-ip    Disable automatic secondary IP setup for single-node clusters"
-            echo "  --help               Show this help message"
+            echo "  --dry-run                 Show what would be done without making changes"
+            echo "  --skip-prerequisites      Skip prerequisites check"
+            echo "  --skip-dns-check          Skip DNS propagation check"
+            echo "  --no-secondary-ip         Disable secondary IP setup (HTTPS only on port 30443)"
+            echo "  --without-secondary-ip    Same as --no-secondary-ip"
+            echo "  --help                    Show this help message"
             echo ""
-            echo "Note: Secondary IP is automatically enabled for single-node clusters"
-            echo "      to support HTTPS on port 443. Use --no-secondary-ip to disable."
+            echo "Note: Secondary IP is ENABLED BY DEFAULT for HTTPS on port 443"
+            echo "      Use --no-secondary-ip to disable and use ports 30080/30443 instead."
             exit 0
             ;;
         *)
@@ -534,11 +536,12 @@ main() {
         fi
     fi
     
-    # Auto-enable secondary IP for single-node clusters unless explicitly disabled
-    if [[ "$NODE_COUNT" -eq 0 ]] && [[ "$NO_SECONDARY_IP" != "true" ]] && [[ "$SETUP_SECONDARY_IP" != "true" ]]; then
-        log_info "Single-node cluster detected. Enabling secondary IP for HTTPS on port 443."
-        log_info "Use --no-secondary-ip to disable this feature."
-        SETUP_SECONDARY_IP=true
+    # Log secondary IP setup status
+    if [[ "$SETUP_SECONDARY_IP" == "true" ]]; then
+        log_info "Secondary IP will be configured for HTTPS on port 443 (default behavior)"
+    else
+        log_warning "Secondary IP setup disabled. HTTPS will only be available on port 30443"
+        log_warning "To enable HTTPS on port 443, omit the --no-secondary-ip flag"
     fi
     
     # Check if cluster already exists
@@ -565,30 +568,174 @@ main() {
             log_info "Setting up secondary IP for HTTPS on port 443..."
             log_info "This uses the proven iptables redirect solution to work around KOPS API server port conflicts"
             
-            if "$SCRIPT_DIR/setup-secondary-ip.sh"; then
-                log_info "Secondary IP setup completed"
-                
-                # Also setup HAProxy with HTTPS support
-                log_info "Setting up HAProxy with HTTPS support..."
-                log_info "Using iptables PREROUTING to redirect port 443 traffic to HAProxy on port 8443"
-                
-                if "$SCRIPT_DIR/setup-haproxy-https.sh"; then
-                    log_info "HAProxy setup completed with iptables redirect"
-                    
-                    # Update DNS records to use secondary IP
-                    log_info "Updating DNS records to use secondary IP..."
-                    if "$SCRIPT_DIR/update-app-dns-secondary.sh"; then
-                        log_info "DNS records updated for secondary IP"
-                        log_info "HTTPS on port 443 is now working!"
-                    else
-                        log_warning "Failed to update DNS records for secondary IP"
-                    fi
+            # Clean up any leftover kube-api-forward service from previous attempts
+            local master_ip
+            master_ip=$(get_master_ip)
+            if [[ -n "$master_ip" ]]; then
+                log_info "Cleaning up any leftover services..."
+                ssh -o StrictHostKeyChecking=no -i "$SSH_KEY_PATH" "ubuntu@$master_ip" \
+                    "sudo systemctl stop kube-api-forward 2>/dev/null || true; \
+                     sudo systemctl disable kube-api-forward 2>/dev/null || true; \
+                     sudo rm -f /etc/systemd/system/kube-api-forward.service 2>/dev/null || true; \
+                     sudo systemctl daemon-reload" || true
+            fi
+            
+            # Clean up any unused Elastic IPs first
+            log_info "Checking for unused Elastic IPs to reuse..."
+            local unused_eip
+            unused_eip=$(aws ec2 describe-addresses \
+                --profile "$AWS_PROFILE" \
+                --region "$AWS_REGION" \
+                --query 'Addresses[?AssociationId==`null`].AllocationId' \
+                --output text 2>/dev/null | awk '{print $1}')
+            
+            if [[ -n "$unused_eip" ]] && [[ "$unused_eip" != "None" ]]; then
+                log_info "Found unused Elastic IP to reuse: $unused_eip"
+            fi
+            
+            # Retry loop for secondary IP setup with exponential backoff
+            local retry_count=0
+            local max_retries=3
+            local retry_delay=2
+            local setup_success=false
+            
+            while [[ $retry_count -lt $max_retries ]]; do
+                if "$SCRIPT_DIR/setup-secondary-ip.sh"; then
+                    setup_success=true
+                    break
                 else
-                    log_warning "HAProxy setup failed"
+                    local exit_code=$?
+                    retry_count=$((retry_count + 1))
+                    if [[ $retry_count -lt $max_retries ]]; then
+                        log_warning "Secondary IP setup failed, retrying in ${retry_delay}s... (attempt $retry_count/$max_retries)"
+                        
+                        # Check if there's a secondary IP without public IP (partial failure)
+                        local eni_id
+                        eni_id=$(aws ec2 describe-instances \
+                            --instance-ids $(aws ec2 describe-instances \
+                                --filters "Name=network-interface.association.public-ip,Values=$master_ip" \
+                                          "Name=instance-state-name,Values=running" \
+                                --query 'Reservations[0].Instances[0].InstanceId' \
+                                --output text \
+                                --profile "$AWS_PROFILE" \
+                                --region "$AWS_REGION") \
+                            --query 'Reservations[0].Instances[0].NetworkInterfaces[0].NetworkInterfaceId' \
+                            --output text \
+                            --profile "$AWS_PROFILE" \
+                            --region "$AWS_REGION" 2>/dev/null || echo "None")
+                        
+                        if [[ -n "$eni_id" ]] && [[ "$eni_id" != "None" ]]; then
+                            local orphaned_secondary_ip
+                            orphaned_secondary_ip=$(aws ec2 describe-network-interfaces \
+                                --network-interface-ids "$eni_id" \
+                                --query 'NetworkInterfaces[0].PrivateIpAddresses[?Primary==`false` && Association.PublicIp==null].PrivateIpAddress' \
+                                --output text \
+                                --profile "$AWS_PROFILE" \
+                                --region "$AWS_REGION" 2>/dev/null || echo "")
+                            
+                            if [[ -n "$orphaned_secondary_ip" ]] && [[ "$orphaned_secondary_ip" != "None" ]]; then
+                                log_info "Found orphaned secondary IP without public IP: $orphaned_secondary_ip"
+                                log_info "This will be handled by the next retry attempt"
+                            fi
+                        fi
+                        
+                        sleep $retry_delay
+                        retry_delay=$((retry_delay * 2))  # Exponential backoff: 2s, 4s, 8s
+                    fi
+                fi
+            done
+            
+            if [[ "$setup_success" != "true" ]]; then
+                log_error "Secondary IP setup failed after $max_retries attempts"
+                log_error "Bootstrap failed due to secondary IP setup failure"
+                exit 1
+            fi
+            
+            # Verify secondary IP has public IP before proceeding
+            log_info "Verifying secondary IP configuration..."
+            local instance_id
+            instance_id=$(aws ec2 describe-instances \
+                --filters "Name=network-interface.association.public-ip,Values=$master_ip" \
+                          "Name=instance-state-name,Values=running" \
+                --query 'Reservations[0].Instances[0].InstanceId' \
+                --output text \
+                --profile "$AWS_PROFILE" \
+                --region "$AWS_REGION" 2>/dev/null || echo "None")
+            
+            if [[ -n "$instance_id" ]] && [[ "$instance_id" != "None" ]]; then
+                local eni_id
+                eni_id=$(aws ec2 describe-instances \
+                    --instance-ids "$instance_id" \
+                    --query 'Reservations[0].Instances[0].NetworkInterfaces[0].NetworkInterfaceId' \
+                    --output text \
+                    --profile "$AWS_PROFILE" \
+                    --region "$AWS_REGION" 2>/dev/null || echo "None")
+                
+                if [[ -n "$eni_id" ]] && [[ "$eni_id" != "None" ]]; then
+                    local secondary_public_ip
+                    secondary_public_ip=$(aws ec2 describe-network-interfaces \
+                        --network-interface-ids "$eni_id" \
+                        --query 'NetworkInterfaces[0].PrivateIpAddresses[?Primary==`false`].Association.PublicIp' \
+                        --output text \
+                        --profile "$AWS_PROFILE" \
+                        --region "$AWS_REGION" 2>/dev/null || echo "")
+                    
+                    if [[ -z "$secondary_public_ip" ]] || [[ "$secondary_public_ip" == "None" ]]; then
+                        log_error "Secondary IP exists but has no public IP associated"
+                        log_error ""
+                        log_error "This indicates an Elastic IP allocation issue."
+                        log_error ""
+                        log_error "To resolve this issue:"
+                        log_error "1. Check and release unused Elastic IPs:"
+                        log_error "   ./scripts/k8s/cleanup-secondary-ip.sh"
+                        log_error ""
+                        log_error "2. Or request an Elastic IP limit increase from AWS"
+                        log_error ""
+                        log_error "3. Or use the cluster without secondary IP:"
+                        log_error "   ./scripts/k8s/teardown-cluster.sh"
+                        log_error "   ./scripts/k8s/bootstrap-cluster.sh --no-secondary-ip"
+                        exit 1
+                    fi
+                    
+                    log_info "Secondary IP verified with public IP: $secondary_public_ip"
+                else
+                    log_error "Could not verify secondary IP configuration"
+                    exit 1
                 fi
             else
-                log_warning "Secondary IP setup failed, continuing without HTTPS on port 443"
+                log_error "Could not find master instance for verification"
+                exit 1
             fi
+            
+            log_info "Secondary IP setup completed"
+            
+            # Also setup HAProxy with HTTPS support
+            log_info "Setting up HAProxy with HTTPS support..."
+            log_info "Using iptables PREROUTING to redirect port 443 traffic to HAProxy on port 8443"
+            
+            # HAProxy usually succeeds on first try, but add single retry just in case
+            if ! "$SCRIPT_DIR/setup-haproxy-https.sh"; then
+                log_warning "HAProxy setup failed, retrying once..."
+                sleep 2
+                if ! "$SCRIPT_DIR/setup-haproxy-https.sh"; then
+                    log_error "HAProxy setup failed - this is required for HTTPS on port 443"
+                    log_error "Bootstrap failed due to HAProxy setup failure"
+                    exit 1
+                fi
+            fi
+            
+            log_info "HAProxy setup completed with iptables redirect"
+            
+            # Update DNS records to use secondary IP
+            log_info "Updating DNS records to use secondary IP..."
+            if ! "$SCRIPT_DIR/update-app-dns-secondary.sh"; then
+                log_error "Failed to update DNS records for secondary IP"
+                log_error "Bootstrap failed due to DNS update failure"
+                exit 1
+            fi
+            
+            log_info "DNS records updated for secondary IP"
+            log_info "HTTPS on port 443 is now working!"
         fi
         
         print_cluster_info

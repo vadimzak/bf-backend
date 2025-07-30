@@ -19,15 +19,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Current Kubernetes Setup**: See `docs/K8S_MIGRATION_PLAN.md`
 - **Standard Ports Configuration**: See `docs/K8S_STANDARD_PORTS_SETUP.md`
 - **HTTPS Port 443 Solution**: See `docs/K8S_HTTPS_PORT_443_SOLUTIONS.md`
+- **Elastic IP Troubleshooting**: See `docs/K8S_ELASTIC_IP_TROUBLESHOOTING.md` - NEW!
+- **SSL Implementation Details**: See `docs/SSL_IMPLEMENTATION_CLEANUP.md`
   - IMPORTANT: Update these documents with every deployment or dev-ops change
 
 ## General Directives
 
 - Always use dark mode design by default
-- IMPORTANT: ALL deployment changes must be scripted for reproducibility
+- IMPORTANT: Our whole cloud environment should be bootable  ALL deployment changes must be scripted for reproducibility
 - NEVER execute commands that may cause downtime without user permission
 - Use `scripts/k8s/` scripts for all Kubernetes operations
 - Ensure all changes can recreate infrastructure from scratch
+
+## Dev-Ops scripts
+
+- Do not add fallbacks to dev-ops scripts unless requested, if something fails - the script should fail with a clear message.
+- Make sure to have timeouts on commands that may take long time or get stuck, there should be no case where our scripts hang.
+- Avoid long (2+ sec) sleeps when waiting for something to be ready, use retry loops instead 
+- Play an error sound when scripts fail
 
 ## Architecture Overview
 
@@ -52,15 +61,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Quick Setup
 ```bash
-# Complete setup with HTTPS on port 443 (recommended)
-./scripts/k8s/quick-start-full.sh --with-secondary-ip
-
-# Complete setup with HTTP only on port 80
+# Complete setup with HTTPS on port 443 (default)
 ./scripts/k8s/quick-start-full.sh
+
+# Complete setup without secondary IP (HTTPS only on port 30443)
+./scripts/k8s/quick-start-full.sh --no-secondary-ip
 
 # Basic setup (ports 30080/30443)
 ./scripts/k8s/quick-start.sh
 ```
+
+**Note**: Secondary IP is now ENABLED BY DEFAULT for HTTPS on port 443.
+If you want to save ~$3.60/month and use port 30443 for HTTPS, add `--no-secondary-ip`
 
 ### Application Deployment
 ```bash
@@ -76,8 +88,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Cluster Management
 ```bash
-# Bootstrap new cluster
+# Bootstrap new cluster (with secondary IP by default)
 ./scripts/k8s/bootstrap-cluster.sh
+
+# Bootstrap without secondary IP
+./scripts/k8s/bootstrap-cluster.sh --no-secondary-ip
 
 # Teardown cluster
 ./scripts/k8s/teardown-cluster.sh
@@ -88,11 +103,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Secondary IP Solution for HTTPS
 
-To enable HTTPS on port 443 on a single-node cluster:
+**Note**: Secondary IP is now ENABLED BY DEFAULT when bootstrapping clusters.
 
-### Option 1: New Cluster with Secondary IP
+### Option 1: New Cluster (Secondary IP is automatic)
 ```bash
-./scripts/k8s/quick-start-full.sh --with-secondary-ip
+# HTTPS on port 443 is enabled by default
+./scripts/k8s/quick-start-full.sh
+
+# Or explicitly with bootstrap
+./scripts/k8s/bootstrap-cluster.sh  # Secondary IP enabled by default
 ```
 
 ### Option 2: Add to Existing Cluster
@@ -119,17 +138,31 @@ Key components:
 ## Key Scripts
 
 ### Kubernetes Scripts (`scripts/k8s/`)
-- `bootstrap-cluster.sh` - Create KOPS cluster (supports `--with-secondary-ip`)
+- `bootstrap-cluster.sh` - Create KOPS cluster (secondary IP enabled by default, use `--no-secondary-ip` to disable)
 - `configure-apps.sh` - Setup ECR and build images
-- `deploy-app.sh` - Deploy app to Kubernetes
+- `deploy-app.sh` - Deploy app to Kubernetes (fixed for NX monorepo)
 - `setup-haproxy.sh` - Configure HTTP on port 80
 - `setup-haproxy-https.sh` - Configure HTTP/HTTPS with secondary IP
-- `setup-secondary-ip.sh` - Setup secondary IP for HTTPS on port 443
-- `quick-start-full.sh` - One-command full setup (supports `--with-secondary-ip`)
-- `teardown-cluster.sh` - Remove cluster
+- `setup-secondary-ip.sh` - Setup secondary IP for HTTPS on port 443 (supports `--dry-run`)
+- `cleanup-secondary-ip.sh` - Clean up secondary IP resources and unused Elastic IPs
+- `diagnose-secondary-ip.sh` - Diagnose secondary IP setup issues
+- `quick-start-full.sh` - One-command full setup (secondary IP enabled by default)
+- `teardown-cluster.sh` - Remove cluster (now includes secondary IP cleanup)
 - `cluster-status.sh` - Health check
 - `update-wildcard-dns.sh` - Update DNS records
 - `update-app-dns-secondary.sh` - Update DNS to use secondary IP
+
+**Recent Improvements (July 2025):**
+- Secondary IP now ENABLED BY DEFAULT (opt-out with `--no-secondary-ip`)
+- Fixed setup-secondary-ip.sh hanging issues (added timeouts, stderr redirects)
+- Simplified IP allocation (now uses AWS auto-assign)
+- Added --dry-run mode for testing
+- Fixed NX monorepo Docker builds in deploy-app.sh
+- Added Elastic IP limit checking and automatic reuse of unassociated IPs
+- Created cleanup-secondary-ip.sh script for resource management
+- Integrated secondary IP cleanup into teardown process
+- Improved error messages with specific resolution steps
+- Added comprehensive Elastic IP troubleshooting guide
 
 ### Application Configuration
 Each app needs:

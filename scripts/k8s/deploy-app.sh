@@ -200,12 +200,42 @@ get_app_url() {
     
     local master_ip=$(get_master_ip)
     
+    # Check if secondary IP is configured
+    local instance_id=$(aws ec2 describe-instances \
+        --filters "Name=network-interface.association.public-ip,Values=$master_ip" \
+                  "Name=instance-state-name,Values=running" \
+        --query 'Reservations[0].Instances[0].InstanceId' \
+        --output text \
+        --profile "$AWS_PROFILE" \
+        --region "$AWS_REGION" 2>/dev/null)
+    
+    local secondary_ip=""
+    if [[ -n "$instance_id" ]] && [[ "$instance_id" != "None" ]]; then
+        secondary_ip=$(aws ec2 describe-instances \
+            --instance-ids "$instance_id" \
+            --query 'Reservations[0].Instances[0].NetworkInterfaces[0].PrivateIpAddresses[?Primary==`false`].Association.PublicIp | [0]' \
+            --output text \
+            --profile "$AWS_PROFILE" \
+            --region "$AWS_REGION" 2>/dev/null)
+    fi
+    
     echo
-    echo "Application URL: https://$app_domain"
-    echo "Master Node IP: $master_ip"
-    echo
-    echo "Note: Ensure DNS record for $app_domain points to $master_ip"
-    echo "Or add to /etc/hosts: $master_ip $app_domain"
+    if [[ -n "$secondary_ip" ]] && [[ "$secondary_ip" != "None" ]]; then
+        echo "Application URLs:"
+        echo "  - https://$app_domain (HTTPS on standard port 443)"
+        echo "  - http://$app_domain"
+        echo
+        echo "Secondary IP is configured and DNS should be pointing to: $secondary_ip"
+    else
+        echo "Application URLs:"
+        echo "  - http://$app_domain:30080"
+        echo "  - https://$app_domain:30443"
+        echo
+        echo "Note: For HTTPS on standard port 443, run:"
+        echo "  ./scripts/k8s/setup-secondary-ip.sh"
+        echo "  ./scripts/k8s/setup-haproxy-https.sh"
+        echo "  ./scripts/k8s/update-app-dns-secondary.sh"
+    fi
 }
 
 # Main execution

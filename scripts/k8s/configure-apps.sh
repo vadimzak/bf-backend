@@ -326,8 +326,34 @@ print_deployment_instructions() {
     done
     echo
     echo "To update DNS records for apps:"
-    echo "  Master IP: $(get_master_ip)"
-    echo "  Update *.vadimzak.com A record to point to master IP"
+    
+    # Check if secondary IP is configured
+    local master_ip=$(get_master_ip)
+    local instance_id=$(aws ec2 describe-instances \
+        --filters "Name=network-interface.association.public-ip,Values=$master_ip" \
+                  "Name=instance-state-name,Values=running" \
+        --query 'Reservations[0].Instances[0].InstanceId' \
+        --output text \
+        --profile "$AWS_PROFILE" \
+        --region "$AWS_REGION" 2>/dev/null)
+    
+    if [[ -n "$instance_id" ]] && [[ "$instance_id" != "None" ]]; then
+        local secondary_ip=$(aws ec2 describe-instances \
+            --instance-ids "$instance_id" \
+            --query 'Reservations[0].Instances[0].NetworkInterfaces[0].PrivateIpAddresses[?Primary==`false`].Association.PublicIp | [0]' \
+            --output text \
+            --profile "$AWS_PROFILE" \
+            --region "$AWS_REGION" 2>/dev/null)
+        
+        if [[ -n "$secondary_ip" ]] && [[ "$secondary_ip" != "None" ]]; then
+            echo "  Secondary IP configured: $secondary_ip"
+            echo "  DNS should already be configured for HTTPS on port 443"
+        else
+            echo "  Master IP: $master_ip"
+            echo "  Update *.vadimzak.com A record to point to master IP"
+            echo "  Note: For HTTPS on port 443, run ./scripts/k8s/setup-secondary-ip.sh"
+        fi
+    fi
     echo
 }
 

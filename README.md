@@ -31,9 +31,10 @@ npm run dev
 ## Production Environment
 
 - **URL**: https://sample.vadimzak.com
-- **Cost**: ~$20-25/month using on-demand t3.small instance
+- **Cost**: ~$20-25/month using on-demand t3.small instance (add ~$3.60/month for HTTPS on port 443)
 - **Monitoring**: Kubernetes health checks and pod monitoring
 - **Ingress**: NGINX Ingress Controller with HAProxy for standard ports
+- **HTTPS**: Secondary IP solution for port 443 (enabled by default)
 
 ## Project Structure
 
@@ -62,9 +63,10 @@ bf-backend/
 
 ## Documentation
 
-- [Deployment Insights](docs/deployment-insights.md) - Lessons learned and best practices
+- [Kubernetes Migration Guide](docs/K8S_MIGRATION_PLAN.md) - Complete setup instructions
+- [Elastic IP Troubleshooting](docs/K8S_ELASTIC_IP_TROUBLESHOOTING.md) - Resolve HTTPS port 443 issues
 - [Stack Overview](docs/Stack.md) - Technology stack details
-- [TODO List](docs/TODO.md) - Current tasks and improvements
+- [Standard Ports Setup](docs/K8S_STANDARD_PORTS_SETUP.md) - HAProxy configuration guide
 
 ## Development Commands
 

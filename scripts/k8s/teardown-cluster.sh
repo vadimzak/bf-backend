@@ -151,6 +151,18 @@ delete_local_config() {
     fi
 }
 
+# Clean up secondary IP resources
+clean_secondary_ip_resources() {
+    log_info "Cleaning up secondary IP resources..."
+    
+    # Run the cleanup script with force flag since user already confirmed teardown
+    if [[ -f "$SCRIPT_DIR/cleanup-secondary-ip.sh" ]]; then
+        "$SCRIPT_DIR/cleanup-secondary-ip.sh" --force || true
+    else
+        log_warning "Secondary IP cleanup script not found, skipping"
+    fi
+}
+
 # Clean up DNS records
 clean_dns_records() {
     log_info "Cleaning up DNS records..."
@@ -249,6 +261,7 @@ main() {
     
     # Teardown steps
     delete_applications
+    clean_secondary_ip_resources  # Clean up secondary IP before deleting cluster
     delete_cluster
     clean_dns_records
     delete_state_store_bucket
