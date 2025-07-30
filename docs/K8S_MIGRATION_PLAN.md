@@ -1,9 +1,7 @@
-# Kubernetes Migration Plan: Docker Compose to KOPS
+# Kubernetes Infrastructure Setup with KOPS
 
 ## Overview
-Migration from Docker Compose on EC2 Spot Instance to Kubernetes using KOPS on AWS with a single on-demand instance.
-
-**Timeline**: 2-3 days (with acceptable downtime)
+This document describes the Kubernetes infrastructure setup using KOPS on AWS with a single on-demand instance.
 
 ## Quick Start
 

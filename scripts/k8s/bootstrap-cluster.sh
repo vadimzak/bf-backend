@@ -14,6 +14,9 @@ set_error_trap
 DRY_RUN=false
 SKIP_PREREQUISITES=false
 SKIP_DNS_CHECK=false
+# Default to true for single-node clusters (will be auto-enabled later if NODE_COUNT=0)
+SETUP_SECONDARY_IP=false
+NO_SECONDARY_IP=false
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -30,13 +33,26 @@ while [[ $# -gt 0 ]]; do
             SKIP_DNS_CHECK=true
             shift
             ;;
+        --with-secondary-ip)
+            SETUP_SECONDARY_IP=true
+            shift
+            ;;
+        --no-secondary-ip)
+            NO_SECONDARY_IP=true
+            shift
+            ;;
         --help)
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
             echo "  --dry-run            Show what would be done without making changes"
             echo "  --skip-prerequisites Skip prerequisites check"
             echo "  --skip-dns-check     Skip DNS propagation check"
+            echo "  --with-secondary-ip  Force setup secondary IP for HTTPS on port 443"
+            echo "  --no-secondary-ip    Disable automatic secondary IP setup for single-node clusters"
             echo "  --help               Show this help message"
+            echo ""
+            echo "Note: Secondary IP is automatically enabled for single-node clusters"
+            echo "      to support HTTPS on port 443. Use --no-secondary-ip to disable."
             exit 0
             ;;
         *)
@@ -206,7 +222,28 @@ deploy_cluster() {
     
     log_info "Cluster deployment initiated. Waiting for cluster to be ready..."
     
-    # Wait for cluster validation to pass
+    # Wait for basic cluster readiness before full validation
+    log_info "Waiting for cluster API to be ready..."
+    local ready_attempts=0
+    local max_ready_attempts=20
+    
+    while [[ $ready_attempts -lt $max_ready_attempts ]]; do
+        if kubectl get nodes >/dev/null 2>&1; then
+            log_info "Cluster API is ready"
+            break
+        fi
+        ready_attempts=$((ready_attempts + 1))
+        sleep 10
+    done
+    
+    # For single-node clusters, remove taint early to allow system pods to schedule
+    if [[ "$NODE_COUNT" -eq 0 ]]; then
+        log_info "Single-node cluster detected, removing control-plane taint early..."
+        kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule- >/dev/null 2>&1 || true
+        sleep 10  # Give pods time to schedule
+    fi
+    
+    # Now wait for full cluster validation
     log_info "Waiting for cluster validation..."
     local validation_attempts=0
     local max_validation_attempts=30
@@ -220,6 +257,11 @@ deploy_cluster() {
         validation_attempts=$((validation_attempts + 1))
         if [[ $((validation_attempts % 5)) -eq 0 ]]; then
             log_info "Still waiting for cluster validation... ($validation_attempts/$max_validation_attempts)"
+            # Check if it's a taint issue on single-node cluster
+            if [[ "$NODE_COUNT" -eq 0 ]] && kubectl get pods -n kube-system -o wide 2>/dev/null | grep -q "Pending"; then
+                log_info "Detected pending system pods, re-applying taint removal..."
+                kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule- >/dev/null 2>&1 || true
+            fi
         fi
         sleep 20
     done
@@ -301,6 +343,10 @@ deploy_cluster() {
         log_info "Updating DNS records..."
         run_cmd update_dns_record "api.${CLUSTER_NAME}" "$master_ip"
         
+        # Also update wildcard DNS for applications
+        log_info "Updating wildcard DNS for applications..."
+        run_cmd update_dns_record "*.${DNS_ZONE}" "$master_ip"
+        
         # Wait for DNS propagation
         log_info "Waiting for DNS propagation..."
         sleep 30
@@ -313,8 +359,8 @@ deploy_cluster() {
         return 1
     fi
     
-    # Remove taint from control plane to allow workloads
-    log_info "Removing control plane taint..."
+    # Remove taint from control plane to allow workloads (if not already done)
+    log_info "Ensuring control plane taint is removed..."
     run_cmd kubectl taint nodes --all node-role.kubernetes.io/control-plane:NoSchedule- || true
     
     # Configure kubectl to handle DNS issues
@@ -455,8 +501,24 @@ print_cluster_info() {
     echo
     echo "Next steps:"
     echo "1. Configure applications: ./scripts/k8s/configure-apps.sh"
-    echo "2. Deploy applications to Kubernetes"
-    echo "3. (Optional) Enable standard ports: ./scripts/k8s/setup-haproxy.sh"
+    echo "2. Deploy applications: ./scripts/k8s/deploy-app.sh <app-name>"
+    if [[ "$SETUP_SECONDARY_IP" != "true" ]]; then
+        echo "3. (Optional) Enable HTTPS on port 443:"
+        echo "   ./scripts/k8s/setup-secondary-ip.sh"
+        echo "   ./scripts/k8s/setup-haproxy-https.sh"
+        echo "   ./scripts/k8s/update-app-dns-secondary.sh"
+    fi
+    echo
+    echo "Applications will be accessible at:"
+    if [[ "$SETUP_SECONDARY_IP" == "true" ]]; then
+        echo "  http://<app-name>.$DNS_ZONE"
+        echo "  https://<app-name>.$DNS_ZONE (on standard ports!)"
+    else
+        echo "  http://<app-name>.$DNS_ZONE:30080 (NodePort)"
+        echo "  https://<app-name>.$DNS_ZONE:30443 (NodePort)"
+        echo ""
+        echo "Note: For standard ports, run the secondary IP setup commands shown above"
+    fi
     echo
 }
 
@@ -470,6 +532,13 @@ main() {
         if ! verify_prerequisites; then
             exit 1
         fi
+    fi
+    
+    # Auto-enable secondary IP for single-node clusters unless explicitly disabled
+    if [[ "$NODE_COUNT" -eq 0 ]] && [[ "$NO_SECONDARY_IP" != "true" ]] && [[ "$SETUP_SECONDARY_IP" != "true" ]]; then
+        log_info "Single-node cluster detected. Enabling secondary IP for HTTPS on port 443."
+        log_info "Use --no-secondary-ip to disable this feature."
+        SETUP_SECONDARY_IP=true
     fi
     
     # Check if cluster already exists
@@ -490,6 +559,38 @@ main() {
         deploy_cluster
         configure_security_groups
         install_core_components
+        
+        # Setup secondary IP if requested
+        if [[ "$SETUP_SECONDARY_IP" == "true" ]]; then
+            log_info "Setting up secondary IP for HTTPS on port 443..."
+            log_info "This uses the proven iptables redirect solution to work around KOPS API server port conflicts"
+            
+            if "$SCRIPT_DIR/setup-secondary-ip.sh"; then
+                log_info "Secondary IP setup completed"
+                
+                # Also setup HAProxy with HTTPS support
+                log_info "Setting up HAProxy with HTTPS support..."
+                log_info "Using iptables PREROUTING to redirect port 443 traffic to HAProxy on port 8443"
+                
+                if "$SCRIPT_DIR/setup-haproxy-https.sh"; then
+                    log_info "HAProxy setup completed with iptables redirect"
+                    
+                    # Update DNS records to use secondary IP
+                    log_info "Updating DNS records to use secondary IP..."
+                    if "$SCRIPT_DIR/update-app-dns-secondary.sh"; then
+                        log_info "DNS records updated for secondary IP"
+                        log_info "HTTPS on port 443 is now working!"
+                    else
+                        log_warning "Failed to update DNS records for secondary IP"
+                    fi
+                else
+                    log_warning "HAProxy setup failed"
+                fi
+            else
+                log_warning "Secondary IP setup failed, continuing without HTTPS on port 443"
+            fi
+        fi
+        
         print_cluster_info
     else
         log_info "[DRY RUN] Cluster configuration created. Run without --dry-run to deploy."

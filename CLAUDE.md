@@ -4,20 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current Infrastructure (July 2025)
 
-**IMPORTANT**: This project has migrated from Docker Compose to Kubernetes using KOPS on AWS.
+**IMPORTANT**: This project uses Kubernetes on AWS with KOPS.
 
-### Key Changes:
+### Infrastructure:
 - **Platform**: Single-node Kubernetes cluster (KOPS)
-- **Container Orchestration**: Kubernetes instead of Docker Compose
+- **Container Orchestration**: Kubernetes
 - **Ingress**: NGINX Ingress Controller with NodePort
-- **Port Access**: HAProxy for standard HTTP port (80)
+- **Port Access**: HAProxy for standard ports (80/443)
+- **HTTPS Support**: Secondary IP solution for port 443 (optional)
 - **Deployment**: Kubernetes manifests and Helm charts
 
 ## Documentation
 
 - **Current Kubernetes Setup**: See `docs/K8S_MIGRATION_PLAN.md`
 - **Standard Ports Configuration**: See `docs/K8S_STANDARD_PORTS_SETUP.md`
-- **Legacy Docker Compose**: See `docs/DEPLOYMENT.md` (historical reference only)
+- **HTTPS Port 443 Solution**: See `docs/K8S_HTTPS_PORT_443_SOLUTIONS.md`
   - IMPORTANT: Update these documents with every deployment or dev-ops change
 
 ## General Directives
@@ -34,9 +35,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Cluster**: Single-node KOPS cluster in il-central-1
 - **Applications**: Deployed in `apps` namespace
 - **Ingress**: NGINX Ingress Controller on NodePorts 30080/30443
-- **Standard Ports**: HAProxy on master node for port 80 access
+- **Standard Ports**: HAProxy on master node for ports 80/443
+- **Secondary IP**: Optional setup for HTTPS on port 443
 - **Container Registry**: AWS ECR for Docker images
-- **SSL/TLS**: cert-manager with Let's Encrypt (future)
+- **SSL/TLS**: cert-manager with Let's Encrypt
 
 ### Application Structure
 - **Monorepo**: NX workspace with multiple apps
@@ -50,7 +52,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Quick Setup
 ```bash
-# Complete setup with standard ports
+# Complete setup with HTTPS on port 443 (recommended)
+./scripts/k8s/quick-start-full.sh --with-secondary-ip
+
+# Complete setup with HTTP only on port 80
 ./scripts/k8s/quick-start-full.sh
 
 # Basic setup (ports 30080/30443)
@@ -81,17 +86,50 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ./scripts/k8s/fix-dns.sh --use-ip
 ```
 
+## Secondary IP Solution for HTTPS
+
+To enable HTTPS on port 443 on a single-node cluster:
+
+### Option 1: New Cluster with Secondary IP
+```bash
+./scripts/k8s/quick-start-full.sh --with-secondary-ip
+```
+
+### Option 2: Add to Existing Cluster
+```bash
+./scripts/k8s/setup-secondary-ip.sh
+./scripts/k8s/setup-haproxy-https.sh
+./scripts/k8s/update-app-dns-secondary.sh
+```
+
+### How It Works
+The solution uses iptables PREROUTING to redirect HTTPS traffic:
+1. Secondary IP receives traffic on port 443
+2. iptables redirects it to HAProxy on port 8443
+3. HAProxy forwards to the appropriate backend (ingress or API server)
+4. This avoids the port conflict with the Kubernetes API server
+
+Key components:
+- Allocates a secondary IP address to the EC2 instance  
+- Uses iptables redirect: `iptables -t nat -A PREROUTING -d <secondary-ip> -p tcp --dport 443 -j REDIRECT --to-port 8443`
+- HAProxy listens on port 8443 instead of 443
+- Keeps API server on primary IP port 443
+- Costs an additional ~$3.60/month for the Elastic IP
+
 ## Key Scripts
 
 ### Kubernetes Scripts (`scripts/k8s/`)
-- `bootstrap-cluster.sh` - Create KOPS cluster
+- `bootstrap-cluster.sh` - Create KOPS cluster (supports `--with-secondary-ip`)
 - `configure-apps.sh` - Setup ECR and build images
 - `deploy-app.sh` - Deploy app to Kubernetes
-- `setup-haproxy.sh` - Configure standard ports
-- `quick-start-full.sh` - One-command full setup
+- `setup-haproxy.sh` - Configure HTTP on port 80
+- `setup-haproxy-https.sh` - Configure HTTP/HTTPS with secondary IP
+- `setup-secondary-ip.sh` - Setup secondary IP for HTTPS on port 443
+- `quick-start-full.sh` - One-command full setup (supports `--with-secondary-ip`)
 - `teardown-cluster.sh` - Remove cluster
 - `cluster-status.sh` - Health check
 - `update-wildcard-dns.sh` - Update DNS records
+- `update-app-dns-secondary.sh` - Update DNS to use secondary IP
 
 ### Application Configuration
 Each app needs:
@@ -104,9 +142,16 @@ Each app needs:
 
 ## Current URLs
 
-### With Standard Ports (HAProxy enabled):
+### With Secondary IP (HTTPS on port 443):
+- http://sample.vadimzak.com
+- https://sample.vadimzak.com
+- http://sample-6.vadimzak.com
+- https://sample-6.vadimzak.com
+
+### With HAProxy (HTTP only):
 - http://sample.vadimzak.com
 - http://sample-6.vadimzak.com
+- https://sample.vadimzak.com:30443 (non-standard port)
 
 ### Without HAProxy:
 - http://sample.vadimzak.com:30080
@@ -140,11 +185,11 @@ npm run dev
 
 ## Important Considerations
 
-1. **Single Node Limitation**: API server uses port 443, preventing standard HTTPS
-2. **Cost**: ~$20-25/month (on-demand t3.small instance)
+1. **Single Node Limitation**: API server uses port 443 (resolved with secondary IP solution)
+2. **Cost**: ~$20-25/month (on-demand t3.small instance) + $3.60/month for secondary IP (optional)
 3. **DNS**: Uses wildcard DNS (*.vadimzak.com)
 4. **Security Groups**: Managed by KOPS, additional ports via scripts
-5. **SSL/TLS**: Currently disabled for HTTP access
+5. **SSL/TLS**: Full HTTPS support available with secondary IP solution
 
 ## Troubleshooting
 
@@ -191,6 +236,7 @@ Current setup (~$20-25/month):
 - Single t3.small instance (on-demand)
 - No load balancer costs
 - Minimal data transfer
+- Optional: +$3.60/month for secondary IP (HTTPS on port 443)
 
 For production, consider:
 - Multi-node cluster

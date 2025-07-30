@@ -81,9 +81,9 @@ check_app_exists() {
         exit 1
     fi
     
-    if [[ ! -f "$app_dir/deploy.config" ]]; then
-        log_error "App config not found: $app_dir/deploy.config"
-        exit 1
+    # deploy.config is optional - we can get everything from k8s manifests
+    if [[ -f "$app_dir/deploy.config" ]]; then
+        log_info "Found deploy.config, loading additional configuration"
     fi
 }
 
@@ -106,10 +106,12 @@ build_and_push() {
     if [[ "$SKIP_BUILD" != "true" ]]; then
         log_info "Building Docker image for $APP_NAME..."
         
+        # Build from workspace root context for NX monorepo
         docker build \
             --platform linux/amd64 \
             -t "$APP_NAME:latest" \
-            "$app_dir"
+            -f "$app_dir/Dockerfile" \
+            "$PROJECT_ROOT"
     fi
     
     # Push image
@@ -180,10 +182,22 @@ rollback_deployment() {
 
 # Get app URL
 get_app_url() {
-    # Read app config to get domain
-    source "$PROJECT_ROOT/apps/$APP_NAME/deploy.config"
+    local app_domain=""
     
-    local app_domain="${APP_DOMAIN:-$APP_NAME.vadimzak.com}"
+    # Try to get domain from deploy.config if it exists
+    if [[ -f "$PROJECT_ROOT/apps/$APP_NAME/deploy.config" ]]; then
+        source "$PROJECT_ROOT/apps/$APP_NAME/deploy.config"
+        app_domain="${APP_DOMAIN:-}"
+    fi
+    
+    # If not found, try to extract from ingress.yaml
+    if [[ -z "$app_domain" ]] && [[ -f "$PROJECT_ROOT/apps/$APP_NAME/k8s/ingress.yaml" ]]; then
+        app_domain=$(grep -m1 "host:" "$PROJECT_ROOT/apps/$APP_NAME/k8s/ingress.yaml" | awk '{print $3}' | tr -d '"')
+    fi
+    
+    # Default to APP_NAME.vadimzak.com if still not found
+    app_domain="${app_domain:-$APP_NAME.vadimzak.com}"
+    
     local master_ip=$(get_master_ip)
     
     echo

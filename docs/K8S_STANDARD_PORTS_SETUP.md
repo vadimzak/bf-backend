@@ -5,15 +5,20 @@ This document describes how we achieved standard port access (80/443) for applic
 ## Architecture Overview
 
 ```
-Internet -> Port 80 -> HAProxy -> Port 30080 -> NGINX Ingress -> Apps
-         -> Port 443 -> Kubernetes API Server
+Internet -> Primary IP (51.16.46.89)
+             -> Port 443 -> socat -> localhost:8443 (API Server)
+         
+         -> Secondary IP (51.84.199.169)  
+             -> Port 80 -> HAProxy -> Port 30080 -> NGINX Ingress -> Apps
+             -> Port 443 -> HAProxy -> Port 30443 -> NGINX Ingress -> Apps
 ```
 
 ## Current Status
 
-- **HTTP (Port 80)**: ✅ Working via HAProxy
-- **HTTPS (Port 443)**: ❌ Used by Kubernetes API Server
-- **Applications**: Accessible on standard HTTP port without port numbers
+- **HTTP (Port 80)**: ✅ Working via HAProxy on secondary IP
+- **HTTPS (Port 443)**: ✅ Working via HAProxy on secondary IP for applications
+- **API Server (Port 443)**: ✅ Working via socat forwarding on primary IP
+- **Applications**: Fully accessible on standard ports without port numbers
 - **HAProxy Stats**: ✅ Available on port 8404
 
 ## Implementation Details
@@ -28,7 +33,11 @@ Service: haproxy.service
 Stats: http://<master-ip>:8404/stats
 ```
 
-**Current Implementation**: We're using a simplified HTTP-only configuration that forwards port 80 traffic to the ingress controller on port 30080. The more complex SNI-based routing for HTTPS was prepared but not implemented due to the single-node limitation.
+**Current Implementation**: We're using a secondary IP address solution:
+- Primary IP (51.16.46.89) handles Kubernetes API traffic on port 443
+- Secondary IP (51.84.199.169) handles all application traffic on ports 80/443
+- HAProxy binds to the secondary IP and forwards to NodePorts
+- socat forwards API traffic from primary IP port 443 to localhost:8443
 
 ### 2. Traffic Flow
 
@@ -171,7 +180,8 @@ Current setup adds no additional AWS costs:
 
 ## Scripts Reference
 
-- `scripts/k8s/setup-haproxy.sh`: Full HAProxy setup with SNI routing (advanced)
-- `scripts/k8s/setup-haproxy-http.sh`: Simplified HTTP-only HAProxy setup (currently used)
+- `scripts/k8s/setup-haproxy.sh`: HAProxy setup script (HTTP-only version)
 - `scripts/k8s/quick-start-full.sh`: Complete setup including HAProxy
-- `scripts/k8s/update-wildcard-dns.sh`: Updates DNS records
+- `scripts/k8s/update-wildcard-dns.sh`: Updates wildcard DNS records
+- `scripts/k8s/update-app-dns.sh`: Updates app DNS to primary IP
+- `scripts/k8s/update-app-dns-secondary.sh`: Updates app DNS to secondary IP (used for port 443 solution)

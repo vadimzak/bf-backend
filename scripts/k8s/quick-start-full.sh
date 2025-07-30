@@ -11,6 +11,7 @@ source "$SCRIPT_DIR/lib/k8s-common.sh"
 SKIP_PREREQUISITES=false
 CONFIGURE_APPS=true
 SETUP_HAPROXY=true
+SETUP_SECONDARY_IP=false
 SKIP_CONFIRM=false
 
 # Parse command line arguments
@@ -28,6 +29,10 @@ while [[ $# -gt 0 ]]; do
             SETUP_HAPROXY=false
             shift
             ;;
+        --with-secondary-ip)
+            SETUP_SECONDARY_IP=true
+            shift
+            ;;
         --yes|-y)
             SKIP_CONFIRM=true
             shift
@@ -38,6 +43,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --skip-prerequisites  Skip installing kubectl, kops, helm"
             echo "  --skip-apps          Skip application configuration"
             echo "  --skip-haproxy       Skip HAProxy setup (apps on non-standard ports)"
+            echo "  --with-secondary-ip  Setup secondary IP for HTTPS on port 443"
             echo "  --yes, -y            Skip confirmation prompts"
             echo "  --help               Show this help message"
             exit 0
@@ -55,7 +61,13 @@ echo "1. Install prerequisites (kubectl, kops, helm)"
 echo "2. Bootstrap a Kubernetes cluster"
 echo "3. Install ingress controller and cert-manager"
 echo "4. Configure applications"
-echo "5. Setup HAProxy for standard ports (80/443)"
+if [[ "$SETUP_SECONDARY_IP" == "true" ]]; then
+    echo "5. Setup secondary IP and HAProxy for standard ports (80/443 with HTTPS)"
+    echo
+    echo "Note: Secondary IP will cost ~$3.60/month for the Elastic IP"
+else
+    echo "5. Setup HAProxy for standard HTTP port (80 only)"
+fi
 echo
 echo "Estimated time: 20-25 minutes"
 echo
@@ -82,7 +94,11 @@ fi
 
 # Step 2: Bootstrap cluster
 log_info "Step 2/5: Bootstrapping Kubernetes cluster..."
-if ! "$SCRIPT_DIR/bootstrap-cluster.sh"; then
+BOOTSTRAP_ARGS=""
+if [[ "$SETUP_SECONDARY_IP" == "true" ]]; then
+    BOOTSTRAP_ARGS="--with-secondary-ip"
+fi
+if ! "$SCRIPT_DIR/bootstrap-cluster.sh" $BOOTSTRAP_ARGS; then
     log_error "Failed to bootstrap cluster"
     exit 1
 fi
@@ -111,10 +127,20 @@ fi
 # Step 5: Setup HAProxy for standard ports
 if [[ "$SETUP_HAPROXY" == "true" ]]; then
     log_info "Step 5/5: Setting up HAProxy for standard ports..."
-    if ! "$SCRIPT_DIR/setup-haproxy.sh"; then
-        log_error "Failed to setup HAProxy"
-        log_info "You can retry with: ./scripts/k8s/setup-haproxy.sh"
-        log_info "Note: Applications will still work on non-standard ports"
+    if [[ "$SETUP_SECONDARY_IP" == "true" ]]; then
+        # Use the HTTPS-enabled HAProxy setup
+        if ! "$SCRIPT_DIR/setup-haproxy-https.sh"; then
+            log_error "Failed to setup HAProxy with HTTPS"
+            log_info "You can retry with: ./scripts/k8s/setup-haproxy-https.sh"
+            log_info "Note: Applications will still work on non-standard ports"
+        fi
+    else
+        # Use the standard HTTP-only HAProxy setup
+        if ! "$SCRIPT_DIR/setup-haproxy.sh"; then
+            log_error "Failed to setup HAProxy"
+            log_info "You can retry with: ./scripts/k8s/setup-haproxy.sh"
+            log_info "Note: Applications will still work on non-standard ports"
+        fi
     fi
 else
     log_info "Step 5/5: Skipping HAProxy setup"
@@ -139,11 +165,23 @@ echo "- API Server: https://api.$CLUSTER_NAME"
 echo
 
 if [[ "$SETUP_HAPROXY" == "true" ]]; then
-    echo "Access URLs (standard ports):"
-    echo "============================="
-    echo "- API: https://api.$CLUSTER_NAME"
-    echo "- Apps: https://<app-name>.$DNS_ZONE"
-    echo "- HAProxy Stats: http://$master_ip:8404/stats"
+    if [[ "$SETUP_SECONDARY_IP" == "true" ]]; then
+        echo "Access URLs (standard ports with HTTPS):"
+        echo "========================================"
+        echo "- API: https://api.$CLUSTER_NAME"
+        echo "- Apps HTTP: http://<app-name>.$DNS_ZONE"
+        echo "- Apps HTTPS: https://<app-name>.$DNS_ZONE"
+        echo "- HAProxy Stats: http://$master_ip:8404/stats"
+        echo
+        echo "Secondary IP configured for full HTTPS support!"
+    else
+        echo "Access URLs (HTTP on standard port):"
+        echo "===================================="
+        echo "- API: https://api.$CLUSTER_NAME"
+        echo "- Apps HTTP: http://<app-name>.$DNS_ZONE"
+        echo "- Apps HTTPS: https://<app-name>.$DNS_ZONE:30443 (non-standard port)"
+        echo "- HAProxy Stats: http://$master_ip:8404/stats"
+    fi
 else
     echo "Access URLs (with port numbers):"
     echo "==============================="

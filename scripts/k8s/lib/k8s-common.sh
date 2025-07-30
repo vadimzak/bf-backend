@@ -12,6 +12,7 @@ export NODE_COUNT="0"
 export DNS_ZONE="vadimzak.com"
 export SSH_KEY_PATH="$HOME/.ssh/kops-key"
 export K8S_VERSION="1.28.5"
+export SETUP_SECONDARY_IP=true
 
 # ECR configuration
 export ECR_REGION="il-central-1"

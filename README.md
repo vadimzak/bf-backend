@@ -1,6 +1,6 @@
 # BF Backend
 
-A production-ready Node.js application deployed on AWS with Docker containerization.
+A production-ready Node.js application deployed on AWS with Kubernetes.
 
 ## Quick Start
 
@@ -12,34 +12,28 @@ npm run dev
 
 ### Production Deployment
 
-**One-Click Deployment:**
+**Kubernetes Deployment:**
 ```bash
-# Deploy latest changes
-./apps/sample-app/deploy/one-click-deploy.sh
+# Deploy application
+./scripts/k8s/deploy-app.sh sample-app
 
-# Deploy with custom message
-./apps/sample-app/deploy/one-click-deploy.sh "Fix authentication bug"
-
-# Test what would be deployed
-./apps/sample-app/deploy/one-click-deploy.sh --dry-run
-
-# Rollback to previous version
-./apps/sample-app/deploy/one-click-deploy.sh --rollback
+# Check cluster status
+./scripts/k8s/cluster-status.sh
 ```
 
 ## Architecture
 
 - **Application**: Node.js + Express + DynamoDB
-- **Infrastructure**: AWS EC2 (spot instances) + Route53 + Let's Encrypt SSL
-- **Containerization**: Docker + Docker Compose + NGINX reverse proxy
-- **Deployment**: Automated with health checks and rollback capability
+- **Infrastructure**: Kubernetes (KOPS) on AWS EC2 + Route53
+- **Containerization**: Docker + Kubernetes + NGINX Ingress Controller
+- **Deployment**: Kubernetes manifests with automated health checks
 
 ## Production Environment
 
 - **URL**: https://sample.vadimzak.com
-- **Cost**: ~$2-4/month using spot instances
-- **Monitoring**: Automated health checks and container monitoring
-- **SSL**: Let's Encrypt with auto-renewal
+- **Cost**: ~$20-25/month using on-demand t3.small instance
+- **Monitoring**: Kubernetes health checks and pod monitoring
+- **Ingress**: NGINX Ingress Controller with HAProxy for standard ports
 
 ## Project Structure
 
@@ -47,10 +41,12 @@ npm run dev
 bf-backend/
 ├── apps/
 │   └── sample-app/           # Main application
-│       ├── deploy/           # Deployment scripts
+│       ├── k8s/              # Kubernetes manifests
 │       ├── public/           # Static files
 │       ├── routes/           # API routes
-│       └── docker-compose.prod.yml
+│       └── Dockerfile        # Container definition
+├── scripts/
+│   └── k8s/                  # Kubernetes scripts
 ├── libs/                     # Shared libraries
 ├── docs/                     # Documentation
 └── package.json             # Workspace configuration
@@ -58,11 +54,11 @@ bf-backend/
 
 ## Key Features
 
-✅ **Production Ready**: HTTPS, security headers, monitoring  
-✅ **Cost Optimized**: AWS spot instances, on-demand DynamoDB  
-✅ **Zero Downtime**: Rolling deployments with health checks  
-✅ **Auto Rollback**: Reverts on deployment failure  
-✅ **Comprehensive Testing**: Automated endpoint verification  
+✅ **Production Ready**: HTTP/HTTPS, security headers, monitoring  
+✅ **Infrastructure as Code**: KOPS-managed Kubernetes cluster  
+✅ **Zero Downtime**: Kubernetes rolling deployments  
+✅ **Container Registry**: AWS ECR for image management  
+✅ **Scalable**: Kubernetes-native scaling and management  
 
 ## Documentation
 
@@ -86,13 +82,13 @@ npm run build
 npm run test
 
 # Deploy to production
-./apps/sample-app/deploy/one-click-deploy.sh
+./scripts/k8s/deploy-app.sh sample-app
 ```
 
 ## Monitoring
 
 - **Health Check**: https://sample.vadimzak.com/health
 - **API Status**: https://sample.vadimzak.com/api/items
-- **Container Status**: `docker ps` on production server
+- **Container Status**: `kubectl get pods -n apps`
 
 For detailed deployment instructions and troubleshooting, see [deployment-insights.md](docs/deployment-insights.md).

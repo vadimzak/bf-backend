@@ -275,4 +275,13 @@ dig sample.vadimzak.com
 
 ## Conclusion
 
-The secondary IP solution provides a clean, working approach to the port 443 conflict in single-node KOPS clusters. While KOPS prevents direct API server configuration changes, the combination of secondary IP + HAProxy + socat forwarding achieves the goal of standard port access for all services.
+The secondary IP solution provides a clean, working approach to the port 443 conflict in single-node KOPS clusters. While KOPS prevents direct API server configuration changes, the combination of secondary IP + HAProxy + iptables redirect achieves the goal of standard port access for all services.
+
+### The Final Working Solution
+
+The key innovation that made this work was using iptables PREROUTING to redirect traffic:
+```bash
+sudo iptables -t nat -A PREROUTING -d <secondary-private-ip> -p tcp --dport 443 -j REDIRECT --to-port 8443
+```
+
+This allows HAProxy to listen on port 8443 (avoiding the conflict) while still receiving traffic that arrives on port 443. The solution is now fully automated in the bootstrap scripts.

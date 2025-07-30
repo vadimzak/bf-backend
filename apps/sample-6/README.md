@@ -18,17 +18,12 @@ npm run dev
 
 From project root:
 ```bash
-./scripts/deploy-app.sh sample-6
-```
-
-Or from this directory:
-```bash
-./deploy.sh
+./scripts/k8s/deploy-app.sh sample-6
 ```
 
 ## Structure
 
 - `server.js` - Main application entry point
 - `public/` - Static files served by Express
-- `deploy.config` - Deployment configuration
-- `docker-compose.prod.yml` - Production Docker configuration
+- `Dockerfile` - Container definition
+- `k8s/` - Kubernetes manifests

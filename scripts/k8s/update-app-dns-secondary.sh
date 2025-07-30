@@ -6,8 +6,32 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/k8s-common.sh"
 
-# Secondary IP address
-SECONDARY_IP="51.84.199.169"
+# Get secondary IP address dynamically
+SECONDARY_IP="${SECONDARY_IP:-}"
+
+# If not provided, try to get it from AWS
+if [[ -z "$SECONDARY_IP" ]]; then
+    # Get master instance
+    MASTER_IP=$(get_master_ip)
+    INSTANCE_ID=$(aws ec2 describe-instances \
+        --filters "Name=network-interface.association.public-ip,Values=$MASTER_IP" \
+                  "Name=instance-state-name,Values=running" \
+        --query 'Reservations[0].Instances[0].InstanceId' \
+        --output text \
+        --profile "$AWS_PROFILE" \
+        --region "$AWS_REGION")
+    
+    # Get secondary public IP
+    SECONDARY_IP=$(aws ec2 describe-instances \
+        --instance-ids "$INSTANCE_ID" \
+        --query 'Reservations[0].Instances[0].NetworkInterfaces[0].PrivateIpAddresses[?Primary==`false`].Association.PublicIp | [0]' \
+        --output text \
+        --profile "$AWS_PROFILE" \
+        --region "$AWS_REGION")
+fi
+
+# Fallback to hardcoded if still not found
+SECONDARY_IP="${SECONDARY_IP:-51.84.26.89}"
 
 # Update application DNS records
 update_app_dns() {
