@@ -106,15 +106,59 @@ const dynamodb = new AWS.DynamoDB.DocumentClient({
 // Initialize Google Generative AI
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || '');
 
-// Middleware - Completely disable CSP for auth debugging
-// app.use(helmet({
-//   contentSecurityPolicy: false,
-// }));
+// Middleware - Configure CSP to allow Firebase auth
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: [
+        "'self'",
+        "'unsafe-inline'", // Needed for Firebase auth popup
+        "https://apis.google.com",
+        "https://www.gstatic.com",
+        "https://accounts.google.com",
+        "https://*.firebaseapp.com",
+        "https://www.googleapis.com"
+      ],
+      styleSrc: [
+        "'self'",
+        "'unsafe-inline'", // Needed for dynamic styles
+        "https://accounts.google.com",
+        "https://fonts.googleapis.com"
+      ],
+      fontSrc: [
+        "'self'",
+        "https://fonts.gstatic.com"
+      ],
+      connectSrc: [
+        "'self'",
+        "https://identitytoolkit.googleapis.com",
+        "https://securetoken.googleapis.com",
+        "https://accounts.google.com",
+        "https://*.firebaseapp.com",
+        "https://firebase.googleapis.com",
+        "https://www.googleapis.com"
+      ],
+      frameSrc: [
+        "'self'",
+        "https://accounts.google.com",
+        "https://*.firebaseapp.com"
+      ],
+      imgSrc: [
+        "'self'",
+        "data:",
+        "https:",
+        "https://www.gstatic.com",
+        "https://lh3.googleusercontent.com" // Google profile images
+      ]
+    }
+  }
+}));
 
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
     ? ['https://gamani.vadimzak.com'] 
-    : ['http://localhost:5173', 'http://localhost:3000'],
+    : ['http://localhost:5173', 'http://localhost:3000', 'http://localhost:3002'],
   credentials: true
 }));
 
