@@ -1,6 +1,6 @@
 import { observer } from 'mobx-react-lite';
 import { useStore } from '../stores';
-import { signInWithPopup } from 'firebase/auth';
+import { signInWithPopup, signInWithRedirect } from 'firebase/auth';
 import { auth, googleProvider } from '../config/firebase';
 import { Navigate } from 'react-router-dom';
 import { useEffect } from 'react';
@@ -38,6 +38,19 @@ const LoginPage = observer(() => {
         providerId: googleProvider.providerId
       });
       
+      // Check if popups are blocked before attempting
+      const testPopup = window.open('', '_blank', 'width=1,height=1');
+      if (!testPopup || testPopup.closed) {
+        console.error('❌ [POPUP] Popup blocker detected');
+        authStore.setError('Popup blocker detected. Please allow popups for this site.');
+        authStore.setLoading(false);
+        return;
+      } else {
+        testPopup.close();
+        console.log('✅ [POPUP] Popup blocker check passed');
+      }
+      
+      console.log('🚀 [POPUP] About to call signInWithPopup...');
       const result = await signInWithPopup(auth, googleProvider);
       console.log('✅ [POPUP] Sign in successful:', result.user?.email);
       console.log('✅ [POPUP] User UID:', result.user?.uid);
@@ -57,10 +70,16 @@ const LoginPage = observer(() => {
       });
       
       // Handle specific popup errors
-      if (error.code === 'auth/popup-closed-by-user') {
-        authStore.setError('Sign in popup closed. Please try again and make sure popups are allowed.');
-      } else if (error.code === 'auth/popup-blocked') {
-        authStore.setError('Popup was blocked by browser. Please allow popups for this site.');
+      if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/popup-blocked') {
+        console.log('🔄 [REDIRECT] Popup failed, trying redirect authentication...');
+        try {
+          await signInWithRedirect(auth, googleProvider);
+          // Don't set loading to false here - redirect will handle it
+          return;
+        } catch (redirectError: any) {
+          console.error('❌ [REDIRECT] Redirect sign in also failed:', redirectError);
+          authStore.setError('Both popup and redirect authentication failed. Please contact support.');
+        }
       } else if (error.code === 'auth/unauthorized-domain') {
         authStore.setError('This domain is not authorized. Please contact support.');
       } else {
