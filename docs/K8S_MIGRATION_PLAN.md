@@ -565,3 +565,28 @@ curl -k https://sample.vadimzak.com:30443/health
 
 - [Lessons Learned](./LESSONS_LEARNED.md) - Detailed insights from the migration
 - [Deployment Guide](./DEPLOYMENT.md) - Original Docker Compose deployment
+## Logging Configuration
+
+The bootstrap scripts now include timestamps in all log messages. You can control the timestamp format using the `LOG_TIMESTAMP_FORMAT` environment variable:
+
+### Timestamp Formats
+
+1. **Full timestamps** (default):
+   ```bash
+   ./scripts/k8s/bootstrap-cluster.sh
+   # Output: [2025-07-30 15:30:47] [INFO] Starting Kubernetes cluster bootstrap...
+   ```
+
+2. **Short timestamps** (time only):
+   ```bash
+   LOG_TIMESTAMP_FORMAT=short ./scripts/k8s/bootstrap-cluster.sh
+   # Output: [15:30:47] [INFO] Starting Kubernetes cluster bootstrap...
+   ```
+
+3. **No timestamps**:
+   ```bash
+   LOG_TIMESTAMP_FORMAT=none ./scripts/k8s/bootstrap-cluster.sh
+   # Output: [INFO] Starting Kubernetes cluster bootstrap...
+   ```
+
+This makes it easier to track timing and debug slow operations during bootstrap.

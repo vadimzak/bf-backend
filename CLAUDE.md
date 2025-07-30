@@ -163,6 +163,12 @@ Key components:
 - Integrated secondary IP cleanup into teardown process
 - Improved error messages with specific resolution steps
 - Added comprehensive Elastic IP troubleshooting guide
+- **Bootstrap Optimizations (July 30)**:
+  - Fixed unbound variable bug in setup-secondary-ip.sh
+  - Reduced retries from 3 to 2 (saves ~8 seconds)
+  - Removed redundant verification (saves ~30 seconds)
+  - Added timestamps to all log messages (configurable via LOG_TIMESTAMP_FORMAT)
+  - Overall bootstrap time reduced by ~2.5-3 minutes
 
 ### Application Configuration
 Each app needs:

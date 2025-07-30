@@ -17,6 +17,10 @@ export SETUP_SECONDARY_IP=true
 # ECR configuration
 export ECR_REGION="il-central-1"
 
+# Logging configuration
+# Set LOG_TIMESTAMP_FORMAT to "short" for HH:MM:SS only, or "none" to disable timestamps
+export LOG_TIMESTAMP_FORMAT="${LOG_TIMESTAMP_FORMAT:-full}"
+
 # Colors for output
 export RED='\033[0;31m'
 export GREEN='\033[0;32m'
@@ -24,22 +28,37 @@ export YELLOW='\033[1;33m'
 export BLUE='\033[0;34m'
 export NC='\033[0m' # No Color
 
+# Helper function to format timestamp
+get_timestamp() {
+    case "${LOG_TIMESTAMP_FORMAT}" in
+        "none")
+            echo ""
+            ;;
+        "short")
+            echo "[$(date '+%H:%M:%S')] "
+            ;;
+        *)
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] "
+            ;;
+    esac
+}
+
 # Logging functions
 log_info() {
-    echo -e "${GREEN}[INFO]${NC} $1"
+    echo -e "$(get_timestamp)${GREEN}[INFO]${NC} $1"
 }
 
 log_error() {
-    echo -e "${RED}[ERROR]${NC} $1" >&2
+    echo -e "$(get_timestamp)${RED}[ERROR]${NC} $1" >&2
 }
 
 log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
+    echo -e "$(get_timestamp)${YELLOW}[WARNING]${NC} $1"
 }
 
 log_debug() {
     if [[ "${DEBUG:-false}" == "true" ]]; then
-        echo -e "${BLUE}[DEBUG]${NC} $1"
+        echo -e "$(get_timestamp)${BLUE}[DEBUG]${NC} $1"
     fi
 }
 

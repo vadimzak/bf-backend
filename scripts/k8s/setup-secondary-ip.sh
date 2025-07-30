@@ -766,4 +766,4 @@ EOF
 
 # Run main function
 # The script already has set -euo pipefail which will cause it to exit on any error
-main "$@"
+main

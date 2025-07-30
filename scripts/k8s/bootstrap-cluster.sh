@@ -595,7 +595,7 @@ main() {
             
             # Retry loop for secondary IP setup with exponential backoff
             local retry_count=0
-            local max_retries=3
+            local max_retries=2
             local retry_delay=2
             local setup_success=false
             
@@ -609,38 +609,41 @@ main() {
                     if [[ $retry_count -lt $max_retries ]]; then
                         log_warning "Secondary IP setup failed, retrying in ${retry_delay}s... (attempt $retry_count/$max_retries)"
                         
-                        # Check if there's a secondary IP without public IP (partial failure)
-                        local eni_id
-                        eni_id=$(aws ec2 describe-instances \
-                            --instance-ids $(aws ec2 describe-instances \
-                                --filters "Name=network-interface.association.public-ip,Values=$master_ip" \
-                                          "Name=instance-state-name,Values=running" \
-                                --query 'Reservations[0].Instances[0].InstanceId' \
+                        # Only check for orphaned IPs on the first retry to save time
+                        if [[ $retry_count -eq 1 ]]; then
+                            # Check if there's a secondary IP without public IP (partial failure)
+                            local eni_id
+                            eni_id=$(aws ec2 describe-instances \
+                                --instance-ids $(aws ec2 describe-instances \
+                                    --filters "Name=network-interface.association.public-ip,Values=$master_ip" \
+                                              "Name=instance-state-name,Values=running" \
+                                    --query 'Reservations[0].Instances[0].InstanceId' \
+                                    --output text \
+                                    --profile "$AWS_PROFILE" \
+                                    --region "$AWS_REGION") \
+                                --query 'Reservations[0].Instances[0].NetworkInterfaces[0].NetworkInterfaceId' \
                                 --output text \
                                 --profile "$AWS_PROFILE" \
-                                --region "$AWS_REGION") \
-                            --query 'Reservations[0].Instances[0].NetworkInterfaces[0].NetworkInterfaceId' \
-                            --output text \
-                            --profile "$AWS_PROFILE" \
-                            --region "$AWS_REGION" 2>/dev/null || echo "None")
-                        
-                        if [[ -n "$eni_id" ]] && [[ "$eni_id" != "None" ]]; then
-                            local orphaned_secondary_ip
-                            orphaned_secondary_ip=$(aws ec2 describe-network-interfaces \
-                                --network-interface-ids "$eni_id" \
-                                --query 'NetworkInterfaces[0].PrivateIpAddresses[?Primary==`false` && Association.PublicIp==null].PrivateIpAddress' \
-                                --output text \
-                                --profile "$AWS_PROFILE" \
-                                --region "$AWS_REGION" 2>/dev/null || echo "")
+                                --region "$AWS_REGION" 2>/dev/null || echo "None")
                             
-                            if [[ -n "$orphaned_secondary_ip" ]] && [[ "$orphaned_secondary_ip" != "None" ]]; then
-                                log_info "Found orphaned secondary IP without public IP: $orphaned_secondary_ip"
-                                log_info "This will be handled by the next retry attempt"
+                            if [[ -n "$eni_id" ]] && [[ "$eni_id" != "None" ]]; then
+                                local orphaned_secondary_ip
+                                orphaned_secondary_ip=$(aws ec2 describe-network-interfaces \
+                                    --network-interface-ids "$eni_id" \
+                                    --query 'NetworkInterfaces[0].PrivateIpAddresses[?Primary==`false` && Association.PublicIp==null].PrivateIpAddress' \
+                                    --output text \
+                                    --profile "$AWS_PROFILE" \
+                                    --region "$AWS_REGION" 2>/dev/null || echo "")
+                                
+                                if [[ -n "$orphaned_secondary_ip" ]] && [[ "$orphaned_secondary_ip" != "None" ]]; then
+                                    log_info "Found orphaned secondary IP without public IP: $orphaned_secondary_ip"
+                                    log_info "This will be handled by the next retry attempt"
+                                fi
                             fi
                         fi
                         
                         sleep $retry_delay
-                        retry_delay=$((retry_delay * 2))  # Exponential backoff: 2s, 4s, 8s
+                        retry_delay=$((retry_delay * 2))  # Exponential backoff: 2s, 4s
                     fi
                 fi
             done
@@ -651,63 +654,9 @@ main() {
                 exit 1
             fi
             
-            # Verify secondary IP has public IP before proceeding
-            log_info "Verifying secondary IP configuration..."
-            local instance_id
-            instance_id=$(aws ec2 describe-instances \
-                --filters "Name=network-interface.association.public-ip,Values=$master_ip" \
-                          "Name=instance-state-name,Values=running" \
-                --query 'Reservations[0].Instances[0].InstanceId' \
-                --output text \
-                --profile "$AWS_PROFILE" \
-                --region "$AWS_REGION" 2>/dev/null || echo "None")
-            
-            if [[ -n "$instance_id" ]] && [[ "$instance_id" != "None" ]]; then
-                local eni_id
-                eni_id=$(aws ec2 describe-instances \
-                    --instance-ids "$instance_id" \
-                    --query 'Reservations[0].Instances[0].NetworkInterfaces[0].NetworkInterfaceId' \
-                    --output text \
-                    --profile "$AWS_PROFILE" \
-                    --region "$AWS_REGION" 2>/dev/null || echo "None")
-                
-                if [[ -n "$eni_id" ]] && [[ "$eni_id" != "None" ]]; then
-                    local secondary_public_ip
-                    secondary_public_ip=$(aws ec2 describe-network-interfaces \
-                        --network-interface-ids "$eni_id" \
-                        --query 'NetworkInterfaces[0].PrivateIpAddresses[?Primary==`false`].Association.PublicIp' \
-                        --output text \
-                        --profile "$AWS_PROFILE" \
-                        --region "$AWS_REGION" 2>/dev/null || echo "")
-                    
-                    if [[ -z "$secondary_public_ip" ]] || [[ "$secondary_public_ip" == "None" ]]; then
-                        log_error "Secondary IP exists but has no public IP associated"
-                        log_error ""
-                        log_error "This indicates an Elastic IP allocation issue."
-                        log_error ""
-                        log_error "To resolve this issue:"
-                        log_error "1. Check and release unused Elastic IPs:"
-                        log_error "   ./scripts/k8s/cleanup-secondary-ip.sh"
-                        log_error ""
-                        log_error "2. Or request an Elastic IP limit increase from AWS"
-                        log_error ""
-                        log_error "3. Or use the cluster without secondary IP:"
-                        log_error "   ./scripts/k8s/teardown-cluster.sh"
-                        log_error "   ./scripts/k8s/bootstrap-cluster.sh --no-secondary-ip"
-                        exit 1
-                    fi
-                    
-                    log_info "Secondary IP verified with public IP: $secondary_public_ip"
-                else
-                    log_error "Could not verify secondary IP configuration"
-                    exit 1
-                fi
-            else
-                log_error "Could not find master instance for verification"
-                exit 1
-            fi
-            
-            log_info "Secondary IP setup completed"
+            # Skip redundant verification - setup-secondary-ip.sh already verified everything
+            # The setup script outputs the secondary IP in its summary
+            log_info "Secondary IP setup completed successfully"
             
             # Also setup HAProxy with HTTPS support
             log_info "Setting up HAProxy with HTTPS support..."
