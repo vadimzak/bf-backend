@@ -1,0 +1,79 @@
+{
+  "name": "gamani",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/gamani/src",
+  "projectType": "application",
+  "tags": ["app:gamani", "type:fullstack"],
+  "targets": {
+    "serve": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node dist/server.js",
+        "cwd": "apps/gamani"
+      },
+      "dependsOn": ["build"]
+    },
+    "dev": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "ts-node src/server.ts",
+        "cwd": "apps/gamani"
+      }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc",
+        "cwd": "apps/gamani"
+      },
+      "outputs": ["apps/gamani/dist"]
+    },
+    "build-client": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cd client && npm run build",
+        "cwd": "apps/gamani"
+      },
+      "outputs": ["apps/gamani/client/dist"]
+    },
+    "dev-client": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cd client && npm run dev",
+        "cwd": "apps/gamani"
+      }
+    },
+    "build-all": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "nx run gamani:build",
+          "nx run gamani:build-client"
+        ],
+        "parallel": false
+      },
+      "dependsOn": ["build", "build-client"]
+    },
+    "docker-build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "docker build -t gamani:latest -f Dockerfile ../../",
+        "cwd": "apps/gamani"
+      },
+      "dependsOn": ["build-all"]
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "echo 'No tests specified for gamani'"
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc --noEmit && cd client && npm run lint",
+        "cwd": "apps/gamani"
+      }
+    }
+  }
+}

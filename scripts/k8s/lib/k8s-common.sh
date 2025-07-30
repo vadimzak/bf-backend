@@ -3,11 +3,13 @@
 
 # Cluster configuration
 export KOPS_STATE_STORE="s3://bf-kops-state-store"
-export CLUSTER_NAME="k8s.vadimzak.com"
+export CLUSTER_NAME="c02.vadimzak.com"
 export AWS_PROFILE="bf"
 export AWS_REGION="il-central-1"
-export MASTER_SIZE="t3.small"
-export NODE_SIZE="t3.small"
+export MASTER_SIZE="t4g.medium"
+export NODE_SIZE="t4g.medium"
+# Docker build platform (ARM64)
+export DOCKER_PLATFORM="linux/arm64"
 export NODE_COUNT="0"
 export DNS_ZONE="vadimzak.com"
 export SSH_KEY_PATH="$HOME/.ssh/kops-key"

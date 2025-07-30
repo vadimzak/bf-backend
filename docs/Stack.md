@@ -7,9 +7,11 @@ v Route53
 v NGINX
 v Docker
 v KOPS
+v Lets Encrypt cert
+v ECR
+v ARM EC2 Instances
 - TypeScript
 - shadcn
-- Lets Encrypt cert
 
 ? ORM?
 ? Logs?
@@ -22,4 +24,3 @@ v Context7 CMP
 - GitHub Action deployment?
 - Prettier?
 - CDK?
-- Docker Image Registry?

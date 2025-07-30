@@ -13,6 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Port Access**: HAProxy for standard ports (80/443)
 - **HTTPS Support**: Secondary IP solution for port 443 (optional)
 - **Deployment**: Kubernetes manifests and Helm charts
+- **Monitoring**: Prometheus + Grafana + Loki stack (internal access via port forwarding)
 
 ## Documentation
 
@@ -43,12 +44,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Kubernetes Infrastructure
 - **Cluster**: Single-node KOPS cluster in il-central-1
+- **Architecture**: ARM64 (cost savings ~10-20% vs AMD64)
+- **Instance Types**: t4g.medium (ARM64)
 - **Applications**: Deployed in `apps` namespace
 - **Ingress**: NGINX Ingress Controller on NodePorts 30080/30443
 - **Standard Ports**: HAProxy on master node for ports 80/443
 - **Secondary IP**: Optional setup for HTTPS on port 443
 - **Container Registry**: AWS ECR for Docker images
 - **SSL/TLS**: cert-manager with Let's Encrypt
+- **Monitoring**: Prometheus, Grafana, Loki in `monitoring` namespace
 
 ### Application Structure
 - **Monorepo**: NX workspace with multiple apps
@@ -92,7 +96,7 @@ If you want to save ~$3.60/month and use port 30443 for HTTPS, add `--no-seconda
 
 ### Cluster Management
 ```bash
-# Bootstrap new cluster (with secondary IP by default)
+# Bootstrap new cluster (ARM64 with secondary IP by default)
 ./scripts/k8s/bootstrap-cluster.sh
 
 # Bootstrap without secondary IP
@@ -104,6 +108,39 @@ If you want to save ~$3.60/month and use port 30443 for HTTPS, add `--no-seconda
 # Fix DNS issues
 ./scripts/k8s/fix-dns.sh --use-ip
 ```
+
+### Monitoring Stack
+```bash
+# Install monitoring stack (Prometheus, Grafana, Loki)
+./scripts/k8s/install-monitoring.sh
+
+# Uninstall monitoring stack
+./scripts/k8s/install-monitoring.sh --uninstall
+
+# Setup port forwarding for monitoring services
+./scripts/k8s/setup-monitoring-portforward.sh
+
+# Forward specific service only
+./scripts/k8s/setup-monitoring-portforward.sh grafana
+./scripts/k8s/setup-monitoring-portforward.sh prometheus
+
+# Stop all port forwarding
+./scripts/k8s/setup-monitoring-portforward.sh --stop
+
+# Import pre-configured Kubernetes dashboards
+./scripts/k8s/setup-monitoring-dashboards.sh
+
+# Import specific dashboard
+./scripts/k8s/setup-monitoring-dashboards.sh kubernetes-cluster-overview
+```
+
+**Monitoring URLs (after port forwarding):**
+- **Grafana**: http://localhost:3000 (dashboards and visualization)
+- **Prometheus**: http://localhost:9090 (metrics and queries)
+- **Loki**: http://localhost:3100 (log queries)
+- **AlertManager**: http://localhost:9093 (alert management)
+
+**Note**: All monitoring services are internal-only (ClusterIP) for security. Access via port forwarding only.
 
 ## Secondary IP Solution for HTTPS
 
@@ -303,8 +340,9 @@ curl http://<master-ip>:8404/stats
 
 ## Cost Optimization
 
-Current setup (~$20-25/month):
-- Single t3.small instance (on-demand)
+Current setup (~$18-22/month with ARM64):
+- Single t4g.medium instance (on-demand, ARM64)
+- 10-20% cost savings vs AMD64 equivalent
 - No load balancer costs
 - Minimal data transfer
 - Optional: +$3.60/month for secondary IP (HTTPS on port 443)

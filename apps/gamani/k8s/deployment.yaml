@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gamani
+  namespace: apps
+  labels:
+    app: gamani
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gamani
+  template:
+    metadata:
+      labels:
+        app: gamani
+    spec:
+      containers:
+      - name: app
+        image: 363397505860.dkr.ecr.il-central-1.amazonaws.com/gamani:latest
+        ports:
+        - containerPort: 3002
+          name: http
+        env:
+        - name: NODE_ENV
+          value: production
+        - name: PORT
+          value: "3002"
+        - name: AWS_REGION
+          value: "il-central-1"
+        - name: DYNAMODB_TABLE_NAME
+          value: "gamani-items"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3002
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3002
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "1000m"

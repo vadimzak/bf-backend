@@ -115,9 +115,11 @@ build_docker_image() {
     
     log_info "Building Docker image for $app_name..."
     
-    # Build for linux/amd64 platform
+    # Build for platform matching cluster architecture
+    local platform="${DOCKER_PLATFORM:-linux/amd64}"
+    log_info "Building for platform: $platform"
     docker build \
-        --platform linux/amd64 \
+        --platform "$platform" \
         -t "$app_name:latest" \
         "$app_dir"
 }
@@ -393,6 +395,7 @@ print_deployment_instructions() {
 # Main execution
 main() {
     log_info "Starting application configuration..."
+    log_info "Docker build platform: ${DOCKER_PLATFORM:-linux/amd64} (auto-detected from instance types)"
     
     # Verify prerequisites
     if ! verify_prerequisites; then

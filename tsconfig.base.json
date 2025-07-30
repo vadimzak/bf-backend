@@ -15,7 +15,8 @@
     "skipDefaultLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "server-core": ["libs/server-core/src/index.ts"]
+      "server-core": ["libs/server-core/src/index.ts"],
+      "@bf-backend/server-core": ["libs/server-core/src/index.ts"]
     }
   },
   "exclude": ["node_modules", "tmp"]

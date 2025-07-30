@@ -107,8 +107,11 @@ build_and_push() {
         log_info "Building Docker image for $APP_NAME..."
         
         # Build from workspace root context for NX monorepo
+        # Build for platform matching cluster architecture
+        local platform="${DOCKER_PLATFORM:-linux/amd64}"
+        log_info "Building for platform: $platform"
         docker build \
-            --platform linux/amd64 \
+            --platform "$platform" \
             -t "$APP_NAME:latest" \
             -f "$app_dir/Dockerfile" \
             "$PROJECT_ROOT"

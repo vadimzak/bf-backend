@@ -58,6 +58,11 @@ jspm_packages/
 .nx/cache
 .nx/workspace-data
 
+# Build outputs
+dist/
+apps/*/dist/
+apps/*/client/dist/
+
 
 .cursor/rules/nx-rules.mdc
 .github/instructions/nx.instructions.md*.tar.gz

@@ -17,6 +17,8 @@ SKIP_DNS_CHECK=false
 # Default to true for single-node clusters
 SETUP_SECONDARY_IP=true
 NO_SECONDARY_IP=false
+# ARM64 AMI configuration
+ARM64_AMI="ami-0d443979bc888c48d"  # Ubuntu 22.04 LTS ARM64
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -129,14 +131,19 @@ create_cluster() {
         return 0
     fi
     
+    # Use ARM64 instance types
+    local master_instance_type="t4g.medium"
+    local node_instance_type="t4g.medium"
+    log_info "Using ARM64 instance types: $master_instance_type"
+    
     # Create cluster with single master
     run_cmd kops create cluster \
         --name="$CLUSTER_NAME" \
         --state="$KOPS_STATE_STORE" \
         --zones="${AWS_REGION}a" \
-        --control-plane-size="$MASTER_SIZE" \
+        --control-plane-size="$master_instance_type" \
         --control-plane-count=1 \
-        --node-size="$NODE_SIZE" \
+        --node-size="$node_instance_type" \
         --node-count="$NODE_COUNT" \
         --dns-zone="$DNS_ZONE" \
         --dns=public \
@@ -156,6 +163,9 @@ create_cluster() {
     
     # Create temporary instance group configuration
     local ig_config="/tmp/control-plane-ig.yaml"
+    local selected_ami="$ARM64_AMI"
+    log_info "Using ARM64 AMI: $selected_ami (for t4g instances)"
+    
     cat > "$ig_config" <<EOF
 apiVersion: kops.k8s.io/v1alpha2
 kind: InstanceGroup
@@ -164,8 +174,8 @@ metadata:
     kops.k8s.io/cluster: ${CLUSTER_NAME}
   name: control-plane-${AWS_REGION}a
 spec:
-  image: 099720109477/ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-20250610
-  machineType: ${MASTER_SIZE}
+  image: ${selected_ami}
+  machineType: ${master_instance_type}
   maxSize: 1
   minSize: 1
   role: Master
@@ -203,8 +213,8 @@ metadata:
     kops.k8s.io/cluster: ${CLUSTER_NAME}
   name: nodes-${AWS_REGION}a
 spec:
-  image: 099720109477/ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-20250610
-  machineType: ${NODE_SIZE}
+  image: ${selected_ami}
+  machineType: ${node_instance_type}
   maxSize: 0
   minSize: 0
   role: Node
