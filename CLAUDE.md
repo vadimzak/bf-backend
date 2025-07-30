@@ -399,3 +399,4 @@ When migrating from Docker Compose:
 ## MISC
 
 - Use AWS Secrets Manager for secrets instead of K8S Secrets
+- Never deploy without permission

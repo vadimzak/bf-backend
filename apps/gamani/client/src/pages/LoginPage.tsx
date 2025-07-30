@@ -79,7 +79,7 @@ const LoginPage = observer(() => {
     <div className="container mx-auto px-4 py-16">
       <div className="max-w-md mx-auto">
         <div className="bg-card border border-border rounded-lg p-6">
-          <h1 className="text-2xl font-bold text-center mb-6">Sign In to Gamani</h1>
+          <h1 className="text-2xl font-bold text-center mb-6">Sign In to Gamani 2</h1>
           
           {authStore.error && (
             <div className="bg-destructive/10 border border-destructive/20 text-destructive rounded-md p-3 mb-4">
