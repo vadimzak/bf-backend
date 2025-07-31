@@ -16,6 +16,16 @@ const DashboardPage = observer(() => {
   const [showChatHistory, setShowChatHistory] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   
+  // New conversation state for ChatGPT-style conversation
+  const [conversationMessages, setConversationMessages] = useState<Array<{
+    id: string;
+    role: 'user' | 'assistant';
+    content: string;
+    timestamp: Date;
+    hasGameCode?: boolean;
+  }>>([]);
+  const [currentGameContext, setCurrentGameContext] = useState<string>('');
+  
   // DEBUG: State for permissions debugging - DO NOT REMOVE
   const [debugItemsResponse, setDebugItemsResponse] = useState<string>('');
   const [debugItemsError, setDebugItemsError] = useState<string>('');
@@ -72,23 +82,46 @@ const DashboardPage = observer(() => {
     authStore.signOut();
   };
 
-  const generateGame = async () => {
+  const handleConversation = async () => {
     if (!gamePrompt.trim()) return;
     
     setIsGenerating(true);
     setError(null);
     
     try {
-      // Save user message to chat history
+      // Add user message to conversation
+      const userMessage = {
+        id: Date.now().toString(),
+        role: 'user' as const,
+        content: gamePrompt,
+        timestamp: new Date(),
+      };
+      
+      setConversationMessages(prev => [...prev, userMessage]);
+      
+      // Save user message to chat history for persistence
       if (projectStore.currentProject) {
         await chatStore.saveMessage(projectStore.currentProject.id, 'user', gamePrompt);
       }
+
+      // Prepare conversation context for API
+      const conversationContext = [
+        ...conversationMessages,
+        userMessage
+      ].map(msg => ({
+        role: msg.role,
+        content: msg.content
+      }));
 
       const headers = await appStore.getAuthHeaders();
       const response = await fetch('/api/protected/ai/generate', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ prompt: gamePrompt }),
+        body: JSON.stringify({ 
+          prompt: gamePrompt,
+          conversation: conversationContext,
+          currentGame: generatedGame ? currentGameContext : null
+        }),
       });
 
       if (!response.ok) {
@@ -97,34 +130,65 @@ const DashboardPage = observer(() => {
 
       const result = await response.json();
       if (result.success) {
-        // Extract HTML content from the response
-        let htmlContent = result.data.response;
+        let responseText = result.data.response;
+        let hasGameCode = false;
+        let gameCode = '';
         
-        // Clean up any markdown formatting if present
-        if (htmlContent.includes('```html')) {
-          htmlContent = htmlContent.replace(/```html\n?/g, '').replace(/```\n?/g, '');
+        // Check if response contains game code
+        if (responseText.includes('```html') || responseText.includes('<html>') || responseText.includes('<!DOCTYPE html>')) {
+          hasGameCode = true;
+          
+          // Extract HTML content from the response
+          if (responseText.includes('```html')) {
+            const htmlMatch = responseText.match(/```html\n?([\s\S]*?)```/);
+            if (htmlMatch) {
+              gameCode = htmlMatch[1].trim();
+              responseText = responseText.replace(/```html\n?[\s\S]*?```/g, '').trim();
+            }
+          } else if (responseText.includes('<html>') || responseText.includes('<!DOCTYPE html>')) {
+            // If it's direct HTML without markdown wrapper
+            gameCode = responseText;
+            responseText = isRTL ? 
+              'יצרתי עבורך משחק חדש. תוכל לראות אותו בחלונית השמאלית.' :
+              'I\'ve created a new game for you. You can see it in the left panel.';
+          }
+          
+          // Update the game display
+          setGeneratedGame(gameCode);
+          setCurrentGameContext(gameCode);
         }
         
-        setGeneratedGame(htmlContent);
+        // Add assistant response to conversation
+        const assistantMessage = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant' as const,
+          content: responseText || (isRTL ? 
+            'יצרתי עבורך משחק. בדוק בחלונית השמאלית!' :
+            'I\'ve created a game for you. Check the left panel!'),
+          timestamp: new Date(),
+          hasGameCode,
+        };
+        
+        setConversationMessages(prev => [...prev, assistantMessage]);
 
-        // Save assistant message with game code to chat history
+        // Save assistant message to chat history for persistence
         if (projectStore.currentProject) {
           await chatStore.saveMessage(
             projectStore.currentProject.id, 
             'assistant', 
-            `Generated game: ${gamePrompt}`, 
-            htmlContent
+            assistantMessage.content,
+            hasGameCode ? gameCode : undefined
           );
         }
       } else {
-        throw new Error(result.error || 'Failed to generate game');
+        throw new Error(result.error || 'Failed to process request');
       }
       
-      // Clear the input after successful generation
+      // Clear the input after successful processing
       setGamePrompt('');
     } catch (error) {
-      console.error('Failed to generate game:', error);
-      setError(error instanceof Error ? error.message : 'Failed to generate game');
+      console.error('Failed to process conversation:', error);
+      setError(error instanceof Error ? error.message : 'Failed to process request');
     } finally {
       setIsGenerating(false);
     }
@@ -133,7 +197,7 @@ const DashboardPage = observer(() => {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      generateGame();
+      handleConversation();
     }
   };
 
@@ -264,7 +328,7 @@ const DashboardPage = observer(() => {
         <div className="hidden md:flex md:w-1/2 bg-gray-900 flex flex-col">
           <div className="p-4 border-b border-gray-700">
             <div className="flex justify-between items-center">
-              <h2 className="text-lg font-semibold">{t('dashboard.preview.title')}</h2>
+              <h2 className={`text-lg font-semibold ${isRTL ? 'text-right' : 'text-left'}`}>{t('dashboard.preview.title')}</h2>
               {generatedGame && (
                 <button
                   onClick={shareGame}
@@ -282,7 +346,7 @@ const DashboardPage = observer(() => {
               <div className="flex items-center justify-center h-full">
                 <div className="text-center">
                   <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-                  <p className="text-gray-400">{t('dashboard.preview.generating')}</p>
+                  <p className={`text-gray-400 ${isRTL ? 'text-right' : 'text-left'}`}>{t('dashboard.preview.generating')}</p>
                 </div>
               </div>
             ) : generatedGame ? (
@@ -302,7 +366,7 @@ const DashboardPage = observer(() => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h.01M19 4a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2h14z" />
                     </svg>
                   </div>
-                  <p>{t('dashboard.preview.placeholder')}</p>
+                  <p className={isRTL ? 'text-right' : 'text-left'}>{t('dashboard.preview.placeholder')}</p>
                 </div>
               </div>
             )}
@@ -313,7 +377,6 @@ const DashboardPage = observer(() => {
         <div className={`w-full md:w-1/2 bg-gray-800 ${isRTL ? 'border-r' : 'border-l'} border-gray-700 flex flex-col`}>
           <div className="p-4 border-b border-gray-700">
             <div className="flex justify-between items-center mb-2">
-              <h2 className="text-lg font-semibold text-right">{t('dashboard.chat.title')}</h2>
               {projectStore.currentProject && (
                 <div className="flex gap-2">
                   <button
@@ -341,92 +404,103 @@ const DashboardPage = observer(() => {
                 </div>
               )}
             </div>
-            <p className="text-sm text-gray-400 text-right">
-              {t('dashboard.chat.subtitle')}
-            </p>
           </div>
           
-          <div className="flex-1 p-4 overflow-y-auto">
-            <div className="space-y-4">
-              {/* Chat History */}
-              {showChatHistory && projectStore.currentProject ? (
-                <div className="bg-gray-700 rounded-lg p-3">
-                  <h3 className="text-sm font-medium mb-3">{t('dashboard.chat.history.title')}</h3>
-                  {chatStore.loading ? (
-                    <div className="text-center py-4">
-                      <div className="animate-spin w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-2"></div>
-                      <p className="text-xs text-gray-400">{t('dashboard.chat.history.loadingHistory')}</p>
-                    </div>
-                  ) : chatStore.hasMessages ? (
-                    <div className="space-y-3 max-h-60 overflow-y-auto">
-                      {chatStore.currentMessages.map((message) => (
-                        <div key={message.id} className="text-sm">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className={`font-medium text-xs ${
-                              message.role === 'user' ? 'text-blue-300' : 'text-green-300'
-                            }`}>
-                              {message.role === 'user' ? t('dashboard.chat.history.user') : t('dashboard.chat.history.assistant')}
-                            </span>
-                            <span className="text-xs text-gray-500">
-                              {new Date(message.timestamp).toLocaleString()}
-                            </span>
-                          </div>
-                          <p className="text-gray-300 text-xs bg-gray-800 rounded p-2 break-words">
-                            {message.content}
-                          </p>
-                          {message.gameCode && (
-                            <button
-                              onClick={() => setGeneratedGame(message.gameCode!)}
-                              className="mt-1 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 rounded transition-colors"
-                            >
-                              🎮 View Game
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-gray-400 text-center py-4">
-                      {t('dashboard.chat.history.noHistory')}
-                    </p>
-                  )}
-                </div>
-              ) : null}
-              
-              {/* Error display */}
+          {/* Chat Messages Area - ChatGPT Style */}
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {/* Chat Messages */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {/* Error display at top */}
               {error && (
                 <div className="bg-red-900/50 border border-red-700 rounded-lg p-3">
-                  <p className="text-red-200 text-sm">{error}</p>
+                  <p className={`text-red-200 text-sm ${isRTL ? 'text-right' : 'text-left'}`}>{error}</p>
                 </div>
               )}
 
               {/* Chat store error display */}
               {chatStore.error && (
                 <div className="bg-red-900/50 border border-red-700 rounded-lg p-3">
-                  <p className="text-red-200 text-sm">Chat Error: {chatStore.error}</p>
+                  <p className={`text-red-200 text-sm ${isRTL ? 'text-right' : 'text-left'}`}>Chat Error: {chatStore.error}</p>
+                </div>
+              )}
+
+              {/* Current Conversation - ChatGPT Style */}
+              {conversationMessages.length > 0 ? (
+                <div className="space-y-4">
+                  {conversationMessages.map((message) => (
+                    <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[80%] rounded-lg p-3 ${
+                        message.role === 'user' 
+                          ? 'bg-blue-600 text-white' 
+                          : 'bg-gray-700 text-gray-200'
+                      }`}>
+                        <div className={`text-sm ${isRTL ? 'text-right' : 'text-left'}`} dir={isRTL ? 'rtl' : 'ltr'}>
+                          <div className={`flex items-center gap-2 mb-1 ${isRTL ? 'justify-end' : 'justify-start'}`}>
+                            <span className={`font-medium text-xs ${
+                              message.role === 'user' ? 'text-blue-100' : 'text-green-300'
+                            }`}>
+                              {message.role === 'user' ? t('dashboard.chat.history.user') : t('dashboard.chat.history.assistant')}
+                            </span>
+                            <span className="text-xs opacity-70">
+                              {message.timestamp.toLocaleString()}
+                            </span>
+                          </div>
+                          <p className={`break-words ${isRTL ? 'text-right' : 'text-left'}`} dir={isRTL ? 'rtl' : 'ltr'}>
+                            {message.content}
+                          </p>
+                          {message.hasGameCode && (
+                            <div className="mt-2 px-2 py-1 text-xs bg-green-600 rounded">
+                              🎮 {isRTL ? 'משחק נוצר' : 'Game Generated'}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <p className={`text-gray-400 text-center ${isRTL ? 'text-right' : 'text-left'}`} dir={isRTL ? 'rtl' : 'ltr'}>
+                    {isRTL ? 'התחל שיחה עם גמני...' : 'Start a conversation with Gamani...'}
+                  </p>
+                </div>
+              )}
+
+              {/* Loading indicator for generation */}
+              {isGenerating && (
+                <div className="flex justify-start">
+                  <div className="bg-gray-700 rounded-lg p-3 max-w-[80%]">
+                    <div className="flex items-center gap-2">
+                      <div className="animate-spin w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full"></div>
+                      <p className={`text-gray-300 text-sm ${isRTL ? 'text-right' : 'text-left'}`} dir={isRTL ? 'rtl' : 'ltr'}>
+                        {t('dashboard.preview.generating')}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
           </div>
           
-          {/* Input area */}
-          <div className="p-4 border-t border-gray-700">
+          {/* Input area - Fixed at bottom */}
+          <div className="p-4 border-t border-gray-700 bg-gray-800">
             <div className="flex gap-2">
               <textarea
                 value={gamePrompt}
                 onChange={(e) => setGamePrompt(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={t('dashboard.chat.placeholder')}
-                className="flex-1 p-3 bg-gray-700 border border-gray-600 rounded-lg resize-none focus:outline-none focus:border-blue-500"
+                placeholder={isRTL ? 'שאל משהו או בקש ליצור משחק...' : 'Ask something or request to create a game...'}
+                className={`flex-1 p-3 bg-gray-700 border border-gray-600 rounded-lg resize-none focus:outline-none focus:border-blue-500 ${isRTL ? 'text-right placeholder:text-right' : 'text-left placeholder:text-left'}`}
+                dir={isRTL ? 'rtl' : 'ltr'}
                 rows={3}
                 disabled={isGenerating}
               />
               <button
-                onClick={generateGame}
+                onClick={handleConversation}
                 disabled={isGenerating || !gamePrompt.trim()}
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors font-medium"
+                className={`px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors font-medium ${isRTL ? 'text-right' : 'text-left'}`}
               >
-                {isGenerating ? t('dashboard.chat.creating') : t('dashboard.chat.createButton')}
+                {isGenerating ? t('dashboard.chat.creating') : (isRTL ? 'שלח' : 'Send')}
               </button>
             </div>
           </div>

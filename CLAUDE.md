@@ -17,12 +17,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Documentation
 
-- **Current Kubernetes Setup**: See `docs/K8S_MIGRATION_PLAN.md`
-- **Standard Ports Configuration**: See `docs/K8S_STANDARD_PORTS_SETUP.md`
+### Current Implementation Guides
 - **HTTPS Port 443 Solution**: See `docs/K8S_HTTPS_PORT_443_SOLUTIONS.md`
-- **Elastic IP Troubleshooting**: See `docs/K8S_ELASTIC_IP_TROUBLESHOOTING.md` - NEW!
-- **SSL Implementation Details**: See `docs/SSL_IMPLEMENTATION_CLEANUP.md`
-  - IMPORTANT: Update these documents with every deployment or dev-ops change
+- **AWS SDK v3 Migration**: See `docs/AWS_SDK_V3_MIGRATION.md`
+- **IRSA Implementation**: Covered in this document and deployment scripts
+
+### Reference Documentation  
+- **Kubernetes Setup**: See `docs/K8S_MIGRATION_PLAN.md`
+- **Standard Ports Config**: See `docs/K8S_STANDARD_PORTS_SETUP.md`
+- **Elastic IP Troubleshooting**: See `docs/K8S_ELASTIC_IP_TROUBLESHOOTING.md`
+- **SSL Implementation**: See `docs/SSL_IMPLEMENTATION_CLEANUP.md`
+- **OIDC Provider Management**: See `docs/OIDC_CLEANUP_NOTES.md`
+- **Secondary IP Configuration**: See `docs/HTTPS_PORT_443_FIX_SUMMARY.md`
+- **Project Status**: See `docs/TODO.md`
+
+**IMPORTANT**: Update these documents with every deployment or dev-ops change
 
 ## General Directives
 
@@ -280,6 +289,40 @@ Each app needs:
 - **Cluster Name**: `k8s.vadimzak.com`
 - **ECR Registry**: Check with `kubectl get cm -n apps`
 
+## Deployment Prerequisites (Updated July 2025)
+
+### Application Requirements
+Before deploying any application, ensure it meets these requirements:
+
+1. **AWS SDK v3**: Use latest v3 packages for IRSA compatibility
+2. **Package.json**: Include IRSA-compatible AWS SDK dependencies
+3. **IAM Setup**: Each app must have dedicated IAM role and policy
+4. **Service Account**: Kubernetes service account with IRSA annotations
+5. **Environment Variables**: IRSA credentials configuration in deployment
+
+### Automatic Validation
+The deployment scripts now automatically validate:
+- ✅ IAM role existence and configuration
+- ✅ Service account setup with correct annotations
+- ✅ AWS SDK v3 package compatibility
+- ✅ IRSA environment variable configuration
+- ✅ Trust policy OIDC provider compatibility
+
+### Pre-deployment Checklist
+```bash
+# 1. Verify app has IRSA setup
+ls apps/<app-name>/aws/iam/
+
+# 2. Check AWS SDK v3 dependencies
+grep "@aws-sdk" apps/<app-name>/package.json
+
+# 3. Validate deployment configuration
+./scripts/k8s/deploy-app.sh <app-name> --build-only
+
+# 4. Deploy with IAM setup if needed
+./scripts/k8s/deploy-app.sh <app-name> --setup-iam
+```
+
 ## Development Workflow
 
 ### Local Development
@@ -419,9 +462,29 @@ For production, consider:
 3. **Applications**: Only accessible through ingress
 4. **SSH**: Key-based access only (`~/.ssh/kops-key`)
 
-## IAM Security Architecture
+## IAM Security Architecture (IRSA)
 
-**IMPORTANT**: Each application now uses minimal IAM permissions through dedicated roles.
+**IMPORTANT**: Each application now uses IRSA (IAM Roles for Service Accounts) with minimal permissions through dedicated roles.
+
+### IRSA Implementation Status ✅
+- **AWS SDK**: Upgraded to v3 with full IRSA support
+- **Service Account Tokens**: Using S3-based OIDC provider (`https://bf-kops-oidc-store.s3.il-central-1.amazonaws.com`)
+- **Credential Management**: Automatic role assumption via Kubernetes service accounts
+- **Production Ready**: All apps use IRSA for AWS service access
+
+### Recent IRSA Fixes (July 31, 2025)
+1. **OIDC Provider Configuration**: Fixed JWT token audience mismatch
+2. **Cluster Configuration**: Updated serviceAccountIssuer to use S3-based OIDC
+3. **Trust Policies**: Corrected audience from `sts.amazonaws.com` to `kubernetes.svc.default`
+4. **Client ID Setup**: Added `kubernetes.svc.default` to OIDC provider client IDs
+5. **AWS SDK v3 Migration**: Complete migration from v2 to v3 with IRSA support
+
+### AWS SDK v3 Migration Details ✅
+- **Packages Updated**: `aws-sdk` v2 → `@aws-sdk/client-*` v3.857.0
+- **DynamoDB**: `AWS.DynamoDB.DocumentClient` → `DynamoDBDocumentClient` with command pattern
+- **Secrets Manager**: `AWS.SecretsManager` → `SecretsManagerClient` with `GetSecretValueCommand`
+- **Credential Provider**: Automatic IRSA detection via environment variables
+- **Command Pattern**: All operations use new `send(command)` pattern
 
 ### Per-App IAM Roles
 
@@ -440,6 +503,50 @@ apps/{app-name}/aws/iam/
 ├── permissions-policy.json   # Minimal permissions for the app
 ├── role-policy.json          # Trust policy (who can assume the role)
 └── local-dev-setup.sh        # Assume role for local development
+```
+
+### IRSA Configuration Example (Gamani App)
+
+**Trust Policy** (`apps/gamani/aws/iam/role-policy.json`):
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::363397505860:oidc-provider/bf-kops-oidc-store.s3.il-central-1.amazonaws.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "bf-kops-oidc-store.s3.il-central-1.amazonaws.com:sub": "system:serviceaccount:apps:gamani-service-account",
+          "bf-kops-oidc-store.s3.il-central-1.amazonaws.com:aud": "kubernetes.svc.default"
+        }
+      }
+    }
+  ]
+}
+```
+
+**Service Account Configuration**:
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gamani-service-account
+  namespace: apps
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::363397505860:role/gamani-app-role
+```
+
+**Deployment Environment Variables**:
+```yaml
+env:
+- name: AWS_ROLE_ARN
+  value: "arn:aws:iam::363397505860:role/gamani-app-role"
+- name: AWS_WEB_IDENTITY_TOKEN_FILE
+  value: "/var/run/secrets/kubernetes.io/serviceaccount/token"
 ```
 
 ### Development vs Production Credentials
@@ -539,7 +646,29 @@ apps/{app-name}/aws/iam/setup-iam.sh
 }
 ```
 
-### Troubleshooting IAM Issues
+### Troubleshooting IRSA Issues
+
+#### Common IRSA Problems
+```bash
+# Check JWT token issuer and audience
+kubectl exec -n apps deployment/<app-name> -- sh -c 'TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token); echo $TOKEN | cut -d"." -f2 | base64 -d 2>/dev/null'
+
+# Verify OIDC provider configuration
+aws iam get-open-id-connect-provider --open-id-connect-provider-arn arn:aws:iam::363397505860:oidc-provider/bf-kops-oidc-store.s3.il-central-1.amazonaws.com --profile bf
+
+# Check service account annotations
+kubectl get serviceaccount <app-name>-service-account -n apps -o yaml
+
+# Test role assumption
+kubectl exec -n apps deployment/<app-name> -- env | grep AWS_
+```
+
+#### OIDC Verification Errors
+If you see "Couldn't retrieve verification key from your identity provider":
+1. Ensure cluster uses S3-based OIDC issuer
+2. Verify OIDC provider client IDs include `kubernetes.svc.default`
+3. Check trust policy audience matches JWT token audience
+4. Confirm serviceAccountIssuer in cluster configuration
 
 #### Common Issues
 ```bash

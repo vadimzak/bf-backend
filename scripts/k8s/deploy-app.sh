@@ -3,6 +3,13 @@ set -euo pipefail
 
 # Deploy application to Kubernetes cluster
 # This script handles the complete deployment process for a single app
+#
+# Features:
+# - AWS SDK v3 compatibility validation
+# - IRSA (IAM Roles for Service Accounts) setup and verification
+# - Automatic Docker image building and ECR push
+# - Kubernetes deployment with health checks
+# - Version management and tagging
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
