@@ -4,6 +4,19 @@
     {
       "Effect": "Allow",
       "Principal": {
+        "Federated": "arn:aws:iam::363397505860:oidc-provider/bf-kops-oidc-store.s3.il-central-1.amazonaws.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "bf-kops-oidc-store.s3.il-central-1.amazonaws.com:sub": "system:serviceaccount:apps:gamani-service-account",
+          "bf-kops-oidc-store.s3.il-central-1.amazonaws.com:aud": "kubernetes.svc.default"
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Principal": {
         "AWS": "arn:aws:iam::363397505860:user/vadim-cli"
       },
       "Action": "sts:AssumeRole",
@@ -12,13 +25,6 @@
           "sts:ExternalId": "gamani-app-local-dev"
         }
       }
-    },
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "AWS": "arn:aws:iam::363397505860:role/masters.c02.vadimzak.com"
-      },
-      "Action": "sts:AssumeRole"
     }
   ]
 }

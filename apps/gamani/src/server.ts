@@ -777,12 +777,12 @@ ${contextualPrompt}Current user request: "${prompt}"
 
 Instructions:
 - If this is a modification request and you have previous game code, modify the existing game accordingly
-- If this is a new game request, create a complete, fun, interactive game in Hebrew
+- If this is a new game request, create a complete, fun, interactive game in English
 - Create a complete HTML page with embedded CSS and JavaScript
 - The game should be child-friendly and fun
-- Use Hebrew text for all UI elements and instructions
+- Use English text for all UI elements and instructions
 - Make it interactive and engaging
-- Include clear game instructions in Hebrew
+- Include clear game instructions in English
 - Use bright colors and appealing visuals
 - Ensure the game works on both desktop and mobile
 - The HTML should be complete and ready to display in an iframe
@@ -790,7 +790,7 @@ Instructions:
 
 If you're creating/modifying a game, return ONLY the complete HTML code, starting with <!DOCTYPE html> and ending with </html>. Do not include any explanations or markdown formatting.
 
-If you're having a conversation, respond naturally in Hebrew or English based on the user's language.`;
+If you're having a conversation, respond naturally in English.`;
 
     const result = await genAI.models.generateContent({
       model: 'gemini-2.0-flash-exp',

@@ -2,12 +2,10 @@ import { observer } from 'mobx-react-lite';
 import { useStore } from '../stores';
 import { Navigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
 import ProjectManager from '../components/ProjectManager';
 
 const DashboardPage = observer(() => {
   const { authStore, appStore, projectStore, chatStore } = useStore();
-  const { t, i18n } = useTranslation();
   const [gamePrompt, setGamePrompt] = useState('');
   const [generatedGame, setGeneratedGame] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -20,8 +18,6 @@ const DashboardPage = observer(() => {
   // DEBUG: State for permissions debugging - DO NOT REMOVE
   const [debugItemsResponse, setDebugItemsResponse] = useState<string>('');
   const [debugItemsError, setDebugItemsError] = useState<string>('');
-  
-  const isRTL = i18n.language === 'he';
 
   // DEBUG: Function to test items API permissions - DO NOT REMOVE
   const debugItemsAPI = async () => {
@@ -163,9 +159,7 @@ const DashboardPage = observer(() => {
           } else if (responseText.includes('<html>') || responseText.includes('<!DOCTYPE html>')) {
             // If it's direct HTML without markdown wrapper
             gameCode = responseText;
-            responseText = isRTL ? 
-              'יצרתי עבורך משחק חדש. תוכל לראות אותו בחלונית השמאלית.' :
-              'I\'ve created a new game for you. You can see it in the left panel.';
+            responseText = 'I\'ve created a new game for you. You can see it in the left panel.';
           }
           
           // Update the game display
@@ -178,9 +172,7 @@ const DashboardPage = observer(() => {
           await chatStore.saveMessage(
             projectStore.currentProject.id, 
             'assistant', 
-            responseText || (isRTL ? 
-              'יצרתי עבורך משחק. בדוק בחלונית השמאלית!' :
-              'I\'ve created a game for you. Check the left panel!'),
+            responseText || 'I\'ve created a game for you. Check the left panel!',
             hasGameCode ? gameCode : undefined
           );
         }
@@ -236,24 +228,24 @@ const DashboardPage = observer(() => {
         // Copy URL to clipboard
         try {
           await navigator.clipboard.writeText(shareUrl);
-          alert(t('dashboard.preview.shareSuccess', { url: shareUrl }));
+          alert(`Game shared successfully! URL: ${shareUrl}`);
         } catch (clipboardError) {
           // Fallback: show URL in prompt for manual copying
-          prompt(t('dashboard.preview.shareFallback'), shareUrl);
+          prompt('Copy this URL to share your game:', shareUrl);
         }
       } else {
         throw new Error(result.error || 'Failed to share game');
       }
     } catch (error) {
       console.error('Failed to share game:', error);
-      alert(t('dashboard.preview.shareError'));
+      alert('Failed to share game. Please try again.');
     } finally {
       setIsSharing(false);
     }
   };
 
   return (
-    <div className={`min-h-screen bg-gray-900 text-white ${isRTL ? 'rtl' : 'ltr'}`} dir={isRTL ? 'rtl' : 'ltr'}>
+    <div className="min-h-screen bg-gray-900 text-white">
       {/* Header */}
       <div className="bg-gray-800 border-b border-gray-700 px-4 py-3">
         <div className="flex justify-between items-center">
@@ -262,13 +254,13 @@ const DashboardPage = observer(() => {
               onClick={handleSignOut}
               className="px-3 py-1 text-sm bg-red-600 hover:bg-red-700 rounded transition-colors"
             >
-              {t('app.signOut')}
+              Sign Out
             </button>
             <button
               onClick={() => setShowProjectManager(!showProjectManager)}
               className="px-3 py-1 text-sm bg-gray-600 hover:bg-gray-700 rounded transition-colors"
             >
-              {showProjectManager ? '📁 ←' : '📁 →'} {t('projects.title')}
+              {showProjectManager ? '📁 ←' : '📁 →'} Projects
             </button>
             {projectStore.currentProject && (
               <span className="text-sm text-blue-300">
@@ -276,11 +268,11 @@ const DashboardPage = observer(() => {
               </span>
             )}
           </div>
-          <div className="flex items-center gap-4 text-right">
+          <div className="flex items-center gap-4">
             <span className="text-sm text-gray-300">
               {authStore.user?.profile?.name || authStore.user?.username}
             </span>
-            <h1 className="text-xl font-bold">{t('dashboard.header.title')}</h1>
+            <h1 className="text-xl font-bold">Gamani - Game Creator</h1>
           </div>
         </div>
       </div>
@@ -332,14 +324,14 @@ const DashboardPage = observer(() => {
         <div className="hidden md:flex md:w-1/2 bg-gray-900 flex flex-col">
           <div className="p-4 border-b border-gray-700">
             <div className="flex justify-between items-center">
-              <h2 className={`text-lg font-semibold ${isRTL ? 'text-right' : 'text-left'}`}>{t('dashboard.preview.title')}</h2>
+              <h2 className="text-lg font-semibold">Game Preview</h2>
               {generatedGame && (
                 <button
                   onClick={shareGame}
                   disabled={isSharing}
                   className="px-3 py-1 text-sm bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded transition-colors"
                 >
-                  {isSharing ? t('dashboard.preview.sharing') : t('dashboard.preview.share')}
+                  {isSharing ? 'Sharing...' : 'Share'}
                 </button>
               )}
             </div>
@@ -350,7 +342,7 @@ const DashboardPage = observer(() => {
               <div className="flex items-center justify-center h-full">
                 <div className="text-center">
                   <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-                  <p className={`text-gray-400 ${isRTL ? 'text-right' : 'text-left'}`}>{t('dashboard.preview.generating')}</p>
+                  <p className="text-gray-400">Creating your game...</p>
                 </div>
               </div>
             ) : generatedGame ? (
@@ -370,7 +362,7 @@ const DashboardPage = observer(() => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h.01M19 4a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2h14z" />
                     </svg>
                   </div>
-                  <p className={isRTL ? 'text-right' : 'text-left'}>{t('dashboard.preview.placeholder')}</p>
+                  <p>Your generated game will appear here</p>
                 </div>
               </div>
             )}
@@ -378,7 +370,7 @@ const DashboardPage = observer(() => {
         </div>
 
         {/* Right Panel - Chat Interface */}
-        <div className={`w-full md:w-1/2 bg-gray-800 ${isRTL ? 'border-r' : 'border-l'} border-gray-700 flex flex-col`}>
+        <div className="w-full md:w-1/2 bg-gray-800 border-l border-gray-700 flex flex-col">
           <div className="p-4 border-b border-gray-700">
             <div className="flex justify-between items-center mb-2">
               {projectStore.currentProject && (
@@ -387,12 +379,12 @@ const DashboardPage = observer(() => {
                     onClick={() => setShowChatHistory(!showChatHistory)}
                     className="px-2 py-1 text-xs bg-gray-600 hover:bg-gray-700 rounded transition-colors"
                   >
-                    💬 {t('dashboard.chat.history.title')}
+                    💬 Chat History
                   </button>
                   {chatStore.hasMessages && (
                     <button
                       onClick={async () => {
-                        if (window.confirm(t('dashboard.chat.history.confirmClear'))) {
+                        if (window.confirm('Are you sure you want to clear the chat history?')) {
                           try {
                             await chatStore.clearChatHistory(projectStore.currentProject!.id);
                           } catch (error) {
@@ -402,7 +394,7 @@ const DashboardPage = observer(() => {
                       }}
                       className="px-2 py-1 text-xs bg-red-600 hover:bg-red-700 rounded transition-colors"
                     >
-                      🗑️ {t('dashboard.chat.history.clearHistory')}
+                      🗑️ Clear History
                     </button>
                   )}
                 </div>
@@ -417,14 +409,14 @@ const DashboardPage = observer(() => {
               {/* Error display at top */}
               {error && (
                 <div className="bg-red-900/50 border border-red-700 rounded-lg p-3">
-                  <p className={`text-red-200 text-sm ${isRTL ? 'text-right' : 'text-left'}`}>{error}</p>
+                  <p className="text-red-200 text-sm">{error}</p>
                 </div>
               )}
 
               {/* Chat store error display */}
               {chatStore.error && (
                 <div className="bg-red-900/50 border border-red-700 rounded-lg p-3">
-                  <p className={`text-red-200 text-sm ${isRTL ? 'text-right' : 'text-left'}`}>Chat Error: {chatStore.error}</p>
+                  <p className="text-red-200 text-sm">Chat Error: {chatStore.error}</p>
                 </div>
               )}
 
@@ -438,23 +430,23 @@ const DashboardPage = observer(() => {
                           ? 'bg-blue-600 text-white' 
                           : 'bg-gray-700 text-gray-200'
                       }`}>
-                        <div className={`text-sm ${isRTL ? 'text-right' : 'text-left'}`} dir={isRTL ? 'rtl' : 'ltr'}>
-                          <div className={`flex items-center gap-2 mb-1 ${isRTL ? 'justify-end' : 'justify-start'}`}>
+                        <div className="text-sm">
+                          <div className="flex items-center gap-2 mb-1 justify-start">
                             <span className={`font-medium text-xs ${
                               message.role === 'user' ? 'text-blue-100' : 'text-green-300'
                             }`}>
-                              {message.role === 'user' ? t('dashboard.chat.history.user') : t('dashboard.chat.history.assistant')}
+                              {message.role === 'user' ? 'You' : 'Gamani'}
                             </span>
                             <span className="text-xs opacity-70">
                               {new Date(message.timestamp).toLocaleString()}
                             </span>
                           </div>
-                          <p className={`break-words ${isRTL ? 'text-right' : 'text-left'}`} dir={isRTL ? 'rtl' : 'ltr'}>
+                          <p className="break-words">
                             {message.content}
                           </p>
                           {message.gameCode && (
                             <div className="mt-2 px-2 py-1 text-xs bg-green-600 rounded">
-                              🎮 {isRTL ? 'משחק נוצר' : 'Game Generated'}
+                              🎮 Game Generated
                             </div>
                           )}
                         </div>
@@ -464,8 +456,8 @@ const DashboardPage = observer(() => {
                 </div>
               ) : (
                 <div className="flex items-center justify-center h-full">
-                  <p className={`text-gray-400 text-center ${isRTL ? 'text-right' : 'text-left'}`} dir={isRTL ? 'rtl' : 'ltr'}>
-                    {isRTL ? 'התחל שיחה עם גמני...' : 'Start a conversation with Gamani...'}
+                  <p className="text-gray-400 text-center">
+                    Start a conversation with Gamani...
                   </p>
                 </div>
               )}
@@ -476,8 +468,8 @@ const DashboardPage = observer(() => {
                   <div className="bg-gray-700 rounded-lg p-3 max-w-[80%]">
                     <div className="flex items-center gap-2">
                       <div className="animate-spin w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full"></div>
-                      <p className={`text-gray-300 text-sm ${isRTL ? 'text-right' : 'text-left'}`} dir={isRTL ? 'rtl' : 'ltr'}>
-                        {t('dashboard.preview.generating')}
+                      <p className="text-gray-300 text-sm">
+                        Creating your game...
                       </p>
                     </div>
                   </div>
@@ -493,18 +485,17 @@ const DashboardPage = observer(() => {
                 value={gamePrompt}
                 onChange={(e) => setGamePrompt(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={isRTL ? 'שאל משהו או בקש ליצור משחק...' : 'Ask something or request to create a game...'}
-                className={`flex-1 p-3 bg-gray-700 border border-gray-600 rounded-lg resize-none focus:outline-none focus:border-blue-500 ${isRTL ? 'text-right placeholder:text-right' : 'text-left placeholder:text-left'}`}
-                dir={isRTL ? 'rtl' : 'ltr'}
+                placeholder="Ask something or request to create a game..."
+                className="flex-1 p-3 bg-gray-700 border border-gray-600 rounded-lg resize-none focus:outline-none focus:border-blue-500"
                 rows={3}
                 disabled={isGenerating}
               />
               <button
                 onClick={handleConversation}
                 disabled={isGenerating || !gamePrompt.trim()}
-                className={`px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors font-medium ${isRTL ? 'text-right' : 'text-left'}`}
+                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors font-medium"
               >
-                {isGenerating ? t('dashboard.chat.creating') : (isRTL ? 'שלח' : 'Send')}
+                {isGenerating ? 'Creating...' : 'Send'}
               </button>
             </div>
           </div>
@@ -516,14 +507,14 @@ const DashboardPage = observer(() => {
         <div className="md:hidden fixed inset-0 bg-black bg-opacity-50 z-50">
           <div className="absolute bottom-0 left-0 right-0 bg-gray-900 rounded-t-lg max-h-[80vh] flex flex-col">
             <div className="p-4 border-b border-gray-700 flex justify-between items-center">
-              <h3 className="text-lg font-semibold">{t('dashboard.preview.yourGame')}</h3>
+              <h3 className="text-lg font-semibold">Your Game</h3>
               <div className="flex gap-2 items-center">
                 <button
                   onClick={shareGame}
                   disabled={isSharing}
                   className="px-3 py-1 text-sm bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded transition-colors"
                 >
-                  {isSharing ? t('dashboard.preview.sharing') : t('dashboard.preview.share')}
+                  {isSharing ? 'Sharing...' : 'Share'}
                 </button>
                 <button
                   onClick={() => setGeneratedGame('')}

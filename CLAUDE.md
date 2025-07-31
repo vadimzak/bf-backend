@@ -20,7 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Current Implementation Guides
 - **HTTPS Port 443 Solution**: See `docs/K8S_HTTPS_PORT_443_SOLUTIONS.md`
 - **AWS SDK v3 Migration**: See `docs/AWS_SDK_V3_MIGRATION.md`
-- **IRSA Implementation**: Covered in this document and deployment scripts
+- **IRSA Implementation**: See `docs/IRSA_IMPLEMENTATION.md` (comprehensive guide)
 
 ### Reference Documentation  
 - **Kubernetes Setup**: See `docs/K8S_MIGRATION_PLAN.md`
