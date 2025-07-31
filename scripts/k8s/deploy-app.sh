@@ -17,6 +17,7 @@ BUILD_ONLY=false
 SKIP_BUILD=false
 SKIP_PUSH=false
 ROLLBACK=false
+SETUP_IAM=false
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -37,6 +38,10 @@ while [[ $# -gt 0 ]]; do
             ROLLBACK=true
             shift
             ;;
+        --setup-iam)
+            SETUP_IAM=true
+            shift
+            ;;
         --help)
             echo "Usage: $0 APP_NAME [OPTIONS]"
             echo "Options:"
@@ -44,6 +49,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --skip-build     Skip building Docker image"
             echo "  --skip-push      Skip pushing image to ECR"
             echo "  --rollback       Rollback to previous deployment"
+            echo "  --setup-iam      Setup IAM role if missing"
             echo "  --help           Show this help message"
             echo
             echo "Examples:"
@@ -51,6 +57,7 @@ while [[ $# -gt 0 ]]; do
             echo "  $0 sample-app --build-only       # Only build image"
             echo "  $0 sample-app --skip-build       # Deploy without rebuilding"
             echo "  $0 sample-app --rollback         # Rollback to previous version"
+            echo "  $0 sample-app --setup-iam        # Setup IAM role if missing"
             exit 0
             ;;
         *)
@@ -249,19 +256,28 @@ get_app_url() {
 main() {
     log_info "Kubernetes deployment for: $APP_NAME"
     
-    # Verify prerequisites
-    if ! verify_prerequisites; then
-        exit 1
-    fi
-    
     # Check app exists
     check_app_exists
     
-    # Check cluster connection
+    # Setup IAM if requested
+    if [[ "$SETUP_IAM" == "true" ]]; then
+        if ! setup_app_iam "$APP_NAME" "$PROJECT_ROOT"; then
+            exit 1
+        fi
+    fi
+    
+    # Validate deployment prerequisites (includes IAM validation)
     if [[ "$BUILD_ONLY" != "true" ]]; then
-        if ! kubectl get nodes >/dev/null 2>&1; then
-            log_error "Cannot connect to Kubernetes cluster"
-            log_error "Run ./scripts/k8s/bootstrap-cluster.sh first"
+        if ! validate_deployment_prerequisites "$APP_NAME" "$PROJECT_ROOT"; then
+            # If IAM setup is missing and user didn't request setup, suggest it
+            if ! check_iam_setup "$APP_NAME" "$PROJECT_ROOT" >/dev/null 2>&1; then
+                log_info "💡 Tip: Run with --setup-iam to automatically configure IAM role"
+            fi
+            exit 1
+        fi
+    else
+        # For build-only, just check basic prerequisites
+        if ! verify_prerequisites; then
             exit 1
         fi
     fi

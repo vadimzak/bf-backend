@@ -1,156 +1,306 @@
 import { observer } from 'mobx-react-lite';
 import { useStore } from '../stores';
 import { Navigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
-import { fetchHealthStatus, displayServiceStatus, HealthResponse } from '../utils/serverUtils';
+import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
+import ProjectManager from '../components/ProjectManager';
 
 const DashboardPage = observer(() => {
-  const { authStore, appStore } = useStore();
-  const [healthData, setHealthData] = useState<HealthResponse | null>(null);
-  const [healthLoading, setHealthLoading] = useState(true);
+  const { authStore, appStore, projectStore } = useStore();
+  const { t, i18n } = useTranslation();
+  const [gamePrompt, setGamePrompt] = useState('');
+  const [generatedGame, setGeneratedGame] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showProjectManager, setShowProjectManager] = useState(false);
+  
+  // DEBUG: State for permissions debugging - DO NOT REMOVE
+  const [debugItemsResponse, setDebugItemsResponse] = useState<string>('');
+  const [debugItemsError, setDebugItemsError] = useState<string>('');
+  
+  const isRTL = i18n.language === 'he';
 
-  console.log('🔧 [DASHBOARD] DashboardPage rendering - authStore.isAuthenticated:', authStore.isAuthenticated);
-  console.log('🔧 [DASHBOARD] AuthStore state:', { 
-    user: authStore.user ? { 
-      username: authStore.user.username, 
-      userId: authStore.user.userId,
-      profile: authStore.user.profile 
-    } : null,
-    loading: authStore.loading,
-    error: authStore.error
-  });
+  // DEBUG: Function to test items API permissions - DO NOT REMOVE
+  const debugItemsAPI = async () => {
+    try {
+      setDebugItemsError('');
+      setDebugItemsResponse('Testing items API...');
+      
+      const headers = await appStore.getAuthHeaders();
+      const response = await fetch('/api/protected/items', {
+        method: 'GET',
+        headers,
+      });
 
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      setDebugItemsResponse(`SUCCESS: ${JSON.stringify(result, null, 2)}`);
+      console.log('[DEBUG] Items API Response:', result);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      setDebugItemsError(`ERROR: ${errorMsg}`);
+      console.error('[DEBUG] Items API Error:', error);
+    }
+  };
+
+  // DEBUG: Auto-test items API on component mount - DO NOT REMOVE
   useEffect(() => {
     if (authStore.isAuthenticated) {
-      appStore.fetchItems();
+      debugItemsAPI();
     }
-  }, [authStore.isAuthenticated, appStore]);
-
-  useEffect(() => {
-    const loadHealthData = async () => {
-      try {
-        const health = await fetchHealthStatus();
-        setHealthData(health);
-      } catch (error) {
-        console.error('Failed to fetch health data:', error);
-      } finally {
-        setHealthLoading(false);
-      }
-    };
-
-    loadHealthData();
-    // Refresh health data every 30 seconds
-    const interval = setInterval(loadHealthData, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  }, [authStore.isAuthenticated]);
 
   if (!authStore.isAuthenticated) {
-    console.log('❌ [DASHBOARD] User is NOT authenticated, redirecting to login');
     return <Navigate to="/login" replace />;
   }
 
-  console.log('✅ [DASHBOARD] User is authenticated, showing dashboard');
-
   const handleSignOut = () => {
-    console.log('🚪 [DASHBOARD] User clicked sign out');
     authStore.signOut();
   };
 
+  const generateGame = async () => {
+    if (!gamePrompt.trim()) return;
+    
+    setIsGenerating(true);
+    setError(null);
+    
+    try {
+      const headers = await appStore.getAuthHeaders();
+      const response = await fetch('/api/protected/ai/generate', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ prompt: gamePrompt }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      if (result.success) {
+        // Extract HTML content from the response
+        let htmlContent = result.data.response;
+        
+        // Clean up any markdown formatting if present
+        if (htmlContent.includes('```html')) {
+          htmlContent = htmlContent.replace(/```html\n?/g, '').replace(/```\n?/g, '');
+        }
+        
+        setGeneratedGame(htmlContent);
+      } else {
+        throw new Error(result.error || 'Failed to generate game');
+      }
+    } catch (error) {
+      console.error('Failed to generate game:', error);
+      setError(error instanceof Error ? error.message : 'Failed to generate game');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      generateGame();
+    }
+  };
+
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground">
-            Welcome back, {authStore.user?.profile?.name || authStore.user?.username}
-          </p>
-        </div>
-        <button
-          onClick={handleSignOut}
-          className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none ring-offset-background border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
-        >
-          Sign Out
-        </button>
-      </div>
-
-      <div className="grid gap-6">
-        <div className="bg-card border border-border rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-4">Server Status</h2>
-          
-          {healthLoading && (
-            <div>Loading server status...</div>
-          )}
-
-          {healthData && (
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                <div>
-                  <span className="text-muted-foreground">App:</span>
-                  <div className="font-mono">{healthData.data.name} v{healthData.data.version}</div>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Uptime:</span>
-                  <div className="font-mono">{healthData.data.uptimeFormatted}</div>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Environment:</span>
-                  <div className="font-mono">{healthData.data.environment}</div>
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Core:</span>
-                  <div className="font-mono">{healthData.data.serverCore}</div>
-                </div>
-              </div>
-              
-              <div>
-                <span className="text-muted-foreground">Services:</span>
-                <div className="text-sm mt-1">
-                  {displayServiceStatus(healthData.data.services)}
-                </div>
-              </div>
-              
-              <div className="text-xs text-muted-foreground">
-                Last updated: {new Date(healthData.timestamp).toLocaleTimeString()}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="bg-card border border-border rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-4">Your Items</h2>
-          
-          {appStore.loading && (
-            <div>Loading items...</div>
-          )}
-
-          {appStore.error && (
-            <div className="bg-destructive/10 border border-destructive/20 text-destructive rounded-md p-3 mb-4">
-              {appStore.error}
-            </div>
-          )}
-
-          {!appStore.loading && !appStore.error && appStore.items.length === 0 && (
-            <p className="text-muted-foreground">No items yet. Create your first item!</p>
-          )}
-
-          {appStore.items.map((item) => (
-            <div key={item.id} className="border border-border rounded-md p-4 mb-4">
-              <h3 className="font-semibold">{item.title}</h3>
-              <p className="text-muted-foreground">{item.content}</p>
-              <p className="text-sm text-muted-foreground mt-2">
-                Created: {new Date(item.createdAt).toLocaleDateString()}
-              </p>
-            </div>
-          ))}
-        </div>
-
-        <div className="bg-card border border-border rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-4">AI Features</h2>
-          <p className="text-muted-foreground">
-            Google Generative AI integration coming soon...
-          </p>
+    <div className={`min-h-screen bg-gray-900 text-white ${isRTL ? 'rtl' : 'ltr'}`} dir={isRTL ? 'rtl' : 'ltr'}>
+      {/* Header */}
+      <div className="bg-gray-800 border-b border-gray-700 px-4 py-3">
+        <div className="flex justify-between items-center">
+          <div className="flex items-center gap-4">
+            <h1 className="text-xl font-bold">{t('dashboard.header.title')}</h1>
+            <button
+              onClick={() => setShowProjectManager(!showProjectManager)}
+              className="px-3 py-1 text-sm bg-gray-600 hover:bg-gray-700 rounded transition-colors"
+            >
+              {showProjectManager ? '📁 ←' : '📁 →'} {t('projects.title')}
+            </button>
+            {projectStore.currentProject && (
+              <span className="text-sm text-blue-300">
+                📝 {projectStore.currentProject.name}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-gray-300">
+              {authStore.user?.profile?.name || authStore.user?.username}
+            </span>
+            <button
+              onClick={handleSignOut}
+              className="px-3 py-1 text-sm bg-red-600 hover:bg-red-700 rounded transition-colors"
+            >
+              {t('app.signOut')}
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* Project Manager Panel */}
+      {showProjectManager && (
+        <div className="bg-gray-850 border-b border-gray-700 px-4 py-3">
+          <ProjectManager />
+        </div>
+      )}
+
+      {/* DEBUG: Permissions Testing Section - DO NOT REMOVE */}
+      <div className="bg-gray-800 border-b border-gray-700 px-4 py-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <span className="text-sm font-medium text-yellow-400">🔧 DEBUG - Items API Test:</span>
+            <button
+              onClick={debugItemsAPI}
+              className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 rounded"
+            >
+              Test Again
+            </button>
+          </div>
+          <div className="text-xs">
+            {debugItemsError ? (
+              <span className="text-red-400">{debugItemsError}</span>
+            ) : debugItemsResponse ? (
+              <span className="text-green-400">
+                {debugItemsResponse.includes('SUCCESS') ? '✅ API Working' : debugItemsResponse}
+              </span>
+            ) : (
+              <span className="text-gray-400">Not tested</span>
+            )}
+          </div>
+        </div>
+        {(debugItemsResponse || debugItemsError) && (
+          <details className="mt-2">
+            <summary className="text-xs text-gray-400 cursor-pointer">Show Details</summary>
+            <pre className="text-xs bg-gray-900 p-2 mt-1 rounded overflow-x-auto">
+              {debugItemsError || debugItemsResponse}
+            </pre>
+          </details>
+        )}
+      </div>
+
+      {/* Main Content - Split Layout */}
+      <div className="flex h-[calc(100vh-64px)]">
+        {/* Left Panel - Game Preview */}
+        <div className="hidden md:flex md:w-1/2 bg-gray-900 flex flex-col">
+          <div className="p-4 border-b border-gray-700">
+            <h2 className="text-lg font-semibold">{t('dashboard.preview.title')}</h2>
+          </div>
+          
+          <div className="flex-1 p-4">
+            {isGenerating ? (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-center">
+                  <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+                  <p className="text-gray-400">{t('dashboard.preview.generating')}</p>
+                </div>
+              </div>
+            ) : generatedGame ? (
+              <div className="h-full">
+                <iframe
+                  srcDoc={generatedGame}
+                  className="w-full h-full border border-gray-600 rounded-lg bg-white"
+                  sandbox="allow-scripts allow-same-origin"
+                  title="Generated Game"
+                />
+              </div>
+            ) : (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-center text-gray-400">
+                  <div className="w-16 h-16 bg-gray-700 rounded-lg mx-auto mb-4 flex items-center justify-center">
+                    <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h.01M19 4a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2h14z" />
+                    </svg>
+                  </div>
+                  <p>{t('dashboard.preview.placeholder')}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right Panel - Chat Interface */}
+        <div className={`w-full md:w-1/2 bg-gray-800 ${isRTL ? 'border-r' : 'border-l'} border-gray-700 flex flex-col`}>
+          <div className="p-4 border-b border-gray-700">
+            <h2 className="text-lg font-semibold mb-2">{t('dashboard.chat.title')}</h2>
+            <p className="text-sm text-gray-400">
+              {t('dashboard.chat.subtitle')}
+            </p>
+          </div>
+          
+          <div className="flex-1 p-4 overflow-y-auto">
+            <div className="space-y-4">
+              {/* Example prompts */}
+              <div className="bg-gray-700 rounded-lg p-3">
+                <h3 className="text-sm font-medium mb-2">{t('dashboard.chat.examples.title')}</h3>
+                <ul className="text-sm text-gray-300 space-y-1">
+                  <li>• {t('dashboard.chat.examples.memory')}</li>
+                  <li>• {t('dashboard.chat.examples.math')}</li>
+                  <li>• {t('dashboard.chat.examples.snake')}</li>
+                  <li>• {t('dashboard.chat.examples.matching')}</li>
+                </ul>
+              </div>
+              
+              {/* Error display */}
+              {error && (
+                <div className="bg-red-900/50 border border-red-700 rounded-lg p-3">
+                  <p className="text-red-200 text-sm">{error}</p>
+                </div>
+              )}
+            </div>
+          </div>
+          
+          {/* Input area */}
+          <div className="p-4 border-t border-gray-700">
+            <div className="flex gap-2">
+              <textarea
+                value={gamePrompt}
+                onChange={(e) => setGamePrompt(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={t('dashboard.chat.placeholder')}
+                className="flex-1 p-3 bg-gray-700 border border-gray-600 rounded-lg resize-none focus:outline-none focus:border-blue-500"
+                rows={3}
+                disabled={isGenerating}
+              />
+              <button
+                onClick={generateGame}
+                disabled={isGenerating || !gamePrompt.trim()}
+                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors font-medium"
+              >
+                {isGenerating ? t('dashboard.chat.creating') : t('dashboard.chat.createButton')}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* Mobile Game Preview Modal/Bottom Sheet */}
+      {generatedGame && (
+        <div className="md:hidden fixed inset-0 bg-black bg-opacity-50 z-50">
+          <div className="absolute bottom-0 left-0 right-0 bg-gray-900 rounded-t-lg max-h-[80vh] flex flex-col">
+            <div className="p-4 border-b border-gray-700 flex justify-between items-center">
+              <h3 className="text-lg font-semibold">{t('dashboard.preview.yourGame')}</h3>
+              <button
+                onClick={() => setGeneratedGame('')}
+                className="text-gray-400 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 p-4">
+              <iframe
+                srcDoc={generatedGame}
+                className="w-full h-full border border-gray-600 rounded-lg bg-white"
+                sandbox="allow-scripts allow-same-origin"
+                title="Generated Game"
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 });

@@ -356,6 +356,105 @@ add_security_group_rule() {
         --region "$AWS_REGION" >/dev/null
 }
 
+# IAM helper functions for per-app security
+
+# Check if IAM role exists for an app
+iam_role_exists() {
+    local app_name="$1"
+    local role_name="${app_name}-app-role"
+    
+    aws iam get-role --role-name "$role_name" --profile "$AWS_PROFILE" >/dev/null 2>&1
+}
+
+# Check if IAM setup exists for an app
+check_iam_setup() {
+    local app_name="$1"
+    local project_root="${2:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+    local iam_dir="$project_root/apps/$app_name/aws/iam"
+    
+    # Check if IAM directory and files exist
+    if [[ ! -d "$iam_dir" ]]; then
+        log_warning "IAM directory not found for $app_name: $iam_dir"
+        return 1
+    fi
+    
+    local required_files=("setup-iam.sh" "permissions-policy.json" "role-policy.json" "local-dev-setup.sh")
+    for file in "${required_files[@]}"; do
+        if [[ ! -f "$iam_dir/$file" ]]; then
+            log_warning "Missing IAM file for $app_name: $iam_dir/$file"
+            return 1
+        fi
+    done
+    
+    # Check if IAM role exists in AWS
+    if ! iam_role_exists "$app_name"; then
+        log_warning "IAM role not found in AWS for $app_name"
+        return 1
+    fi
+    
+    log_info "✅ IAM setup verified for $app_name"
+    return 0
+}
+
+# Setup IAM role for an app
+setup_app_iam() {
+    local app_name="$1"
+    local project_root="${2:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+    local iam_script="$project_root/apps/$app_name/aws/iam/setup-iam.sh"
+    
+    if [[ ! -f "$iam_script" ]]; then
+        log_error "IAM setup script not found: $iam_script"
+        log_error "Please create IAM infrastructure for $app_name first"
+        return 1
+    fi
+    
+    log_info "🔧 Setting up IAM role for $app_name..."
+    if ! "$iam_script"; then
+        log_error "Failed to setup IAM role for $app_name"
+        return 1
+    fi
+    
+    log_info "✅ IAM role setup completed for $app_name"
+    return 0
+}
+
+# Validate deployment prerequisites including IAM
+validate_deployment_prerequisites() {
+    local app_name="$1"
+    local project_root="${2:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+    
+    log_info "🔍 Validating deployment prerequisites for $app_name..."
+    
+    # Check basic prerequisites
+    if ! verify_prerequisites; then
+        return 1
+    fi
+    
+    # Check cluster connection
+    if ! kubectl get nodes >/dev/null 2>&1; then
+        log_error "Cannot connect to Kubernetes cluster"
+        log_error "Run ./scripts/k8s/bootstrap-cluster.sh first"
+        return 1
+    fi
+    
+    # Check IAM setup
+    if ! check_iam_setup "$app_name" "$project_root"; then
+        log_warning "IAM setup issues detected for $app_name"
+        log_info "You can run: apps/$app_name/aws/iam/setup-iam.sh"
+        # Don't fail deployment for IAM issues, just warn
+    fi
+    
+    # Check if service account exists
+    if kubectl get serviceaccount "${app_name}-service-account" -n apps >/dev/null 2>&1; then
+        log_info "✅ Service account found for $app_name"
+    else
+        log_warning "Service account not found for $app_name, will be created during deployment"
+    fi
+    
+    log_info "✅ Prerequisites validation completed for $app_name"
+    return 0
+}
+
 # Export all functions
 export -f log_info log_error log_warning log_debug
 export -f command_exists verify_prerequisites
@@ -363,3 +462,4 @@ export -f wait_for cluster_exists get_cluster_status
 export -f get_master_ip update_dns_record
 export -f get_ecr_registry ensure_ecr_repository docker_ecr_login delete_ecr_repository list_ecr_repositories delete_app_ecr_repositories
 export -f add_security_group_rule
+export -f iam_role_exists check_iam_setup setup_app_iam validate_deployment_prerequisites

@@ -283,16 +283,48 @@ Each app needs:
 ## Development Workflow
 
 ### Local Development
+
+#### First-time Setup (per app)
 ```bash
+# Create IAM role with minimal permissions (run once per app)
+apps/<app-name>/aws/iam/setup-iam.sh
+
+# Or use deployment script with IAM setup
+./scripts/k8s/deploy-app.sh <app-name> --setup-iam
+```
+
+#### Daily Development
+```bash
+# Preferred: Use npm script (handles credentials automatically)
+npm run dev:<app-name>
+
+# Alternative: Navigate to app directory
 cd apps/<app-name>
 npm install
-npm run dev
+
+# Use development script with credential setup
+./dev-with-creds.sh
+
+# Or manually assume role and start
+./aws/iam/local-dev-setup.sh && npm run dev
 ```
+
+#### Development Features
+- **Automatic credential renewal**: npm scripts handle IAM role assumption
+- **Minimal permissions**: Local development uses same restricted permissions as production
+- **1-hour sessions**: Credentials automatically expire for security
+- **No personal credentials**: Development never uses your main AWS credentials
 
 ### Deploy Changes
 ```bash
-# Auto-commits, builds, pushes, and deploys
-./scripts/k8s/deploy-app.sh <app-name> "Description of changes"
+# Build and deploy (validates IAM setup)
+./scripts/k8s/deploy-app.sh <app-name>
+
+# Deploy with automatic IAM setup if missing
+./scripts/k8s/deploy-app.sh <app-name> --setup-iam
+
+# Build only (useful for testing IAM validation)
+./scripts/k8s/deploy-app.sh <app-name> --build-only
 ```
 
 ## Important Considerations
@@ -387,6 +419,155 @@ For production, consider:
 3. **Applications**: Only accessible through ingress
 4. **SSH**: Key-based access only (`~/.ssh/kops-key`)
 
+## IAM Security Architecture
+
+**IMPORTANT**: Each application now uses minimal IAM permissions through dedicated roles.
+
+### Per-App IAM Roles
+
+Each application has its own IAM role with minimal required permissions:
+
+- **Role naming**: `{app-name}-app-role` (e.g., `gamani-app-role`)
+- **Policy naming**: `{app-name}-app-policy` (e.g., `gamani-app-policy`)
+- **Principle of least privilege**: Only permissions needed for app functionality
+
+### IAM Directory Structure
+
+Each app should have an `aws/iam/` directory:
+```
+apps/{app-name}/aws/iam/
+├── setup-iam.sh              # Creates/updates IAM role and policy
+├── permissions-policy.json   # Minimal permissions for the app
+├── role-policy.json          # Trust policy (who can assume the role)
+└── local-dev-setup.sh        # Assume role for local development
+```
+
+### Development vs Production Credentials
+
+#### Local Development
+```bash
+# Navigate to app directory
+cd apps/{app-name}
+
+# Assume role with minimal permissions (1-hour session)
+./aws/iam/local-dev-setup.sh
+
+# Or use the development wrapper script
+./dev-with-creds.sh
+
+# Or use npm script (preferred)
+npm run dev:{app-name}
+```
+
+#### Production Deployment
+- **Kubernetes Service Account**: Each app has a dedicated service account
+- **Service Account Annotation**: Links to the IAM role via IRSA-style annotation
+- **EC2 Instance Role**: Master node assumes app roles on behalf of service accounts
+
+### IAM Setup Commands
+
+#### Create IAM Role for New App
+```bash
+# Create IAM infrastructure (run once per app)
+apps/{app-name}/aws/iam/setup-iam.sh
+
+# Deploy with automatic IAM setup
+./scripts/k8s/deploy-app.sh {app-name} --setup-iam
+
+# Verify IAM setup
+./scripts/k8s/deploy-app.sh {app-name} --build-only  # Includes validation
+```
+
+#### Update IAM Permissions
+```bash
+# Modify apps/{app-name}/aws/iam/permissions-policy.json
+# Then run:
+apps/{app-name}/aws/iam/setup-iam.sh
+```
+
+### Security Best Practices
+
+1. **Minimal Permissions**: Each app only gets permissions it actually needs
+2. **Time-Limited Sessions**: Local development uses 1-hour assumed role sessions
+3. **No Hardcoded Credentials**: Never store credentials in code or manifests
+4. **Service Account Isolation**: Each app has its own Kubernetes service account
+5. **Regular Rotation**: Assumed role sessions automatically expire
+
+### Example IAM Permissions (Gamani App)
+
+**Permissions Policy** (`apps/gamani/aws/iam/permissions-policy.json`):
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:PutItem",
+        "dynamodb:GetItem", 
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:Scan",
+        "dynamodb:Query"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:il-central-1:363397505860:table/gamani-items"
+      ]
+    }
+  ]
+}
+```
+
+**Trust Policy** (`apps/gamani/aws/iam/role-policy.json`):
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::363397505860:user/vadim-cli"
+      },
+      "Action": "sts:AssumeRole",
+      "Condition": {
+        "StringEquals": {
+          "sts:ExternalId": "gamani-app-local-dev"
+        }
+      }
+    }
+  ]
+}
+```
+
+### Troubleshooting IAM Issues
+
+#### Common Issues
+```bash
+# Check if IAM role exists
+aws iam get-role --role-name {app-name}-app-role --profile bf
+
+# Validate IAM setup for app
+./scripts/k8s/deploy-app.sh {app-name} --build-only
+
+# Check service account in cluster
+kubectl get serviceaccount {app-name}-service-account -n apps
+
+# Check assumed role credentials
+cd apps/{app-name} && ./aws/iam/local-dev-setup.sh eval
+```
+
+#### Missing IAM Setup
+If deployment fails with IAM warnings:
+1. Run `./scripts/k8s/deploy-app.sh {app-name} --setup-iam`
+2. Or manually: `apps/{app-name}/aws/iam/setup-iam.sh`
+
+#### Credential Expiration
+Local development credentials expire after 1 hour:
+```bash
+# Re-assume role when credentials expire
+npm run dev:{app-name}  # Automatically renews credentials
+```
+
 ## Migration Notes
 
 When migrating from Docker Compose:
@@ -402,3 +583,4 @@ When migrating from Docker Compose:
 - Never deploy without permission
 - Always install the latest versions of packages, use context7
 - Use Playwrite MCP to perform e2e borwser tests
+- TypeScript - use types instead of interfaces

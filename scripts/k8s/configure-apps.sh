@@ -64,11 +64,17 @@ get_apps() {
     if [[ ${#APPS[@]} -gt 0 ]]; then
         echo "${APPS[@]}"
     else
-        # Find all apps with deploy.config
-        find "$PROJECT_ROOT/apps" -name "deploy.config" -type f | \
-            while read -r config; do
-                basename "$(dirname "$config")"
-            done
+        # Find all apps with either Dockerfile or existing k8s manifests
+        local apps=()
+        for app_dir in "$PROJECT_ROOT/apps"/*; do
+            if [[ -d "$app_dir" ]]; then
+                local app_name=$(basename "$app_dir")
+                if [[ -f "$app_dir/Dockerfile" ]] || [[ -d "$app_dir/k8s" ]]; then
+                    apps+=("$app_name")
+                fi
+            fi
+        done
+        echo "${apps[@]}"
     fi
 }
 
@@ -77,18 +83,41 @@ read_app_config() {
     local app_name="$1"
     local config_file="$PROJECT_ROOT/apps/$app_name/deploy.config"
     
-    if [[ ! -f "$config_file" ]]; then
-        log_error "Config file not found: $config_file"
-        return 1
+    # Initialize app-specific defaults
+    export APP_NAME="$app_name"
+    case "$app_name" in
+        "gamani")
+            export APP_PORT="3002"
+            ;;
+        "sample-app")
+            export APP_PORT="3001"
+            ;;
+        *)
+            export APP_PORT="3000"
+            ;;
+    esac
+    export APP_DOMAIN="$app_name.vadimzak.com"
+    
+    # Try to detect port from existing deployment manifest
+    local deployment_file="$PROJECT_ROOT/apps/$app_name/k8s/deployment.yaml"
+    if [[ -f "$deployment_file" ]]; then
+        local detected_port=$(grep -m1 "containerPort:" "$deployment_file" | awk '{print $3}' || echo "")
+        if [[ -n "$detected_port" ]]; then
+            export APP_PORT="$detected_port"
+            log_info "Detected port $APP_PORT from existing deployment manifest"
+        fi
     fi
     
-    # Source the config file
-    source "$config_file"
-    
-    # Export variables for use in manifests
-    export APP_NAME="$app_name"
-    export APP_PORT="${APP_PORT:-3000}"
-    export APP_DOMAIN="${APP_DOMAIN:-$app_name.vadimzak.com}"
+    # Override with deploy.config if it exists
+    if [[ -f "$config_file" ]]; then
+        log_info "Loading configuration from $config_file"
+        source "$config_file"
+        # Re-export with any overrides from config file
+        export APP_PORT="${APP_PORT:-$APP_PORT}"
+        export APP_DOMAIN="${APP_DOMAIN:-$app_name.vadimzak.com}"
+    else
+        log_info "Using configuration for $app_name (port: $APP_PORT, domain: $APP_DOMAIN)"
+    fi
 }
 
 # Create ECR repositories

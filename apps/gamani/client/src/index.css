@@ -57,3 +57,28 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* RTL Support */
+.rtl {
+  direction: rtl;
+  text-align: right;
+}
+
+.ltr {
+  direction: ltr;
+  text-align: left;
+}
+
+/* RTL-aware flex direction adjustments */
+.rtl .flex {
+  flex-direction: row-reverse;
+}
+
+.rtl .justify-between {
+  flex-direction: row-reverse;
+}
+
+/* Hebrew font improvements */
+.rtl {
+  font-family: 'Segoe UI', 'Arial', 'Noto Sans Hebrew', 'David Libre', serif;
+}

@@ -33,6 +33,16 @@ interface CreateItemRequest {
   content: string;
 }
 
+interface CreateProjectRequest {
+  name: string;
+  description?: string;
+}
+
+interface UpdateProjectRequest {
+  name?: string;
+  description?: string;
+}
+
 interface AIGenerateRequest {
   prompt: string;
 }
@@ -40,8 +50,21 @@ interface AIGenerateRequest {
 const app = express();
 const PORT = process.env.PORT || 3002;
 
-// AWS Secrets Manager
-AWS.config.credentials = new AWS.SharedIniFileCredentials({ profile: 'bf' });
+// AWS Configuration
+// Use environment credentials in development, default credential chain in production
+if (process.env.NODE_ENV !== 'production') {
+  console.log('🔧 [AWS] Using environment credentials for development (minimal permissions)');
+  AWS.config.credentials = new AWS.EnvironmentCredentials('AWS');
+  console.log('✅ [AWS] Using minimal permissions from assumed role');
+} else {
+  console.log('🔧 [AWS] Using default credential chain for production');
+  // In production, use default credential chain (EC2 instance role)
+  // The master role has the necessary DynamoDB permissions
+  console.log('✅ [AWS] Using master instance role permissions');
+}
+
+AWS.config.region = process.env.AWS_REGION || 'il-central-1';
+
 const secretsManager = new AWS.SecretsManager({
   region: process.env.AWS_REGION || 'il-central-1'
 });
@@ -180,6 +203,10 @@ app.use('/api/protected', authenticateCognito);
 
 // DynamoDB routes
 app.get('/api/protected/items', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  console.log('🔍 [ITEMS API] GET /api/protected/items - Starting');
+  console.log('🔍 [ITEMS API] User sub:', req.user?.sub);
+  console.log('🔍 [ITEMS API] Table name:', process.env.DYNAMODB_TABLE_NAME || 'gamani-items');
+  
   try {
     const params = {
       TableName: process.env.DYNAMODB_TABLE_NAME || 'gamani-items',
@@ -189,11 +216,20 @@ app.get('/api/protected/items', async (req: AuthenticatedRequest, res: Response)
       }
     };
 
+    console.log('🔍 [ITEMS API] DynamoDB params:', JSON.stringify(params, null, 2));
+    console.log('🔍 [ITEMS API] About to call dynamodb.scan()...');
+    
     const result = await dynamodb.scan(params).promise();
+    
+    console.log('✅ [ITEMS API] DynamoDB scan completed successfully');
+    console.log('✅ [ITEMS API] Result:', JSON.stringify(result, null, 2));
+    
     res.json(createApiResponse({ items: result.Items }, 'Items retrieved successfully'));
+    console.log('✅ [ITEMS API] Response sent successfully');
   } catch (error) {
-    console.error('DynamoDB error:', error);
+    console.error('❌ [ITEMS API] DynamoDB error:', error);
     res.status(500).json(createErrorResponse('Failed to fetch items'));
+    console.log('❌ [ITEMS API] Error response sent');
   }
 });
 
@@ -222,6 +258,186 @@ app.post('/api/protected/items', async (req: AuthenticatedRequest, res: Response
   }
 });
 
+// Project management routes
+app.get('/api/protected/projects', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  console.log('🔍 [PROJECTS API] GET /api/protected/projects - Starting');
+  console.log('🔍 [PROJECTS API] User sub:', req.user?.sub);
+  
+  try {
+    const params = {
+      TableName: process.env.DYNAMODB_PROJECTS_TABLE || 'gamani-projects',
+      FilterExpression: 'userId = :userId',
+      ExpressionAttributeValues: {
+        ':userId': req.user?.sub
+      }
+    };
+
+    console.log('🔍 [PROJECTS API] DynamoDB params:', JSON.stringify(params, null, 2));
+    
+    const result = await dynamodb.scan(params).promise();
+    
+    console.log('✅ [PROJECTS API] DynamoDB scan completed successfully');
+    console.log('✅ [PROJECTS API] Result:', JSON.stringify(result, null, 2));
+    
+    res.json(createApiResponse({ projects: result.Items }, 'Projects retrieved successfully'));
+  } catch (error) {
+    console.error('❌ [PROJECTS API] DynamoDB error:', error);
+    res.status(500).json(createErrorResponse('Failed to fetch projects'));
+  }
+});
+
+app.post('/api/protected/projects', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  console.log('📝 [PROJECTS API] POST /api/protected/projects - Starting');
+  
+  try {
+    const { name, description }: CreateProjectRequest = req.body;
+    
+    if (!name || !name.trim()) {
+      res.status(400).json(createErrorResponse('Project name is required'));
+      return;
+    }
+
+    const project = {
+      id: uuidv4(),
+      userId: req.user?.sub,
+      name: name.trim(),
+      description: description?.trim() || '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    const params = {
+      TableName: process.env.DYNAMODB_PROJECTS_TABLE || 'gamani-projects',
+      Item: project
+    };
+
+    console.log('📝 [PROJECTS API] Creating project:', JSON.stringify(project, null, 2));
+    
+    await dynamodb.put(params).promise();
+    
+    console.log('✅ [PROJECTS API] Project created successfully');
+    res.json(createApiResponse({ project }, 'Project created successfully'));
+  } catch (error) {
+    console.error('❌ [PROJECTS API] Error creating project:', error);
+    res.status(500).json(createErrorResponse('Failed to create project'));
+  }
+});
+
+app.put('/api/protected/projects/:id', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  console.log('📝 [PROJECTS API] PUT /api/protected/projects/:id - Starting');
+  
+  try {
+    const { id } = req.params;
+    const { name, description }: UpdateProjectRequest = req.body;
+    
+    if (!id) {
+      res.status(400).json(createErrorResponse('Project ID is required'));
+      return;
+    }
+
+    // First check if project exists and belongs to user
+    const getParams = {
+      TableName: process.env.DYNAMODB_PROJECTS_TABLE || 'gamani-projects',
+      Key: { id }
+    };
+
+    const existingProject = await dynamodb.get(getParams).promise();
+    
+    if (!existingProject.Item) {
+      res.status(404).json(createErrorResponse('Project not found'));
+      return;
+    }
+
+    if (existingProject.Item.userId !== req.user?.sub) {
+      res.status(403).json(createErrorResponse('Not authorized to update this project'));
+      return;
+    }
+
+    const updateExpression = [];
+    const expressionAttributeValues: any = {};
+    const expressionAttributeNames: any = {};
+
+    if (name !== undefined) {
+      updateExpression.push('#name = :name');
+      expressionAttributeNames['#name'] = 'name';
+      expressionAttributeValues[':name'] = name.trim();
+    }
+
+    if (description !== undefined) {
+      updateExpression.push('description = :description');
+      expressionAttributeValues[':description'] = description.trim();
+    }
+
+    updateExpression.push('updatedAt = :updatedAt');
+    expressionAttributeValues[':updatedAt'] = new Date().toISOString();
+
+    const updateParams = {
+      TableName: process.env.DYNAMODB_PROJECTS_TABLE || 'gamani-projects',
+      Key: { id },
+      UpdateExpression: `SET ${updateExpression.join(', ')}`,
+      ExpressionAttributeValues: expressionAttributeValues,
+      ...(Object.keys(expressionAttributeNames).length > 0 && { ExpressionAttributeNames: expressionAttributeNames }),
+      ReturnValues: 'ALL_NEW'
+    };
+
+    console.log('📝 [PROJECTS API] Updating project:', JSON.stringify(updateParams, null, 2));
+    
+    const result = await dynamodb.update(updateParams).promise();
+    
+    console.log('✅ [PROJECTS API] Project updated successfully');
+    res.json(createApiResponse({ project: result.Attributes }, 'Project updated successfully'));
+  } catch (error) {
+    console.error('❌ [PROJECTS API] Error updating project:', error);
+    res.status(500).json(createErrorResponse('Failed to update project'));
+  }
+});
+
+app.delete('/api/protected/projects/:id', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  console.log('🗑️ [PROJECTS API] DELETE /api/protected/projects/:id - Starting');
+  
+  try {
+    const { id } = req.params;
+    
+    if (!id) {
+      res.status(400).json(createErrorResponse('Project ID is required'));
+      return;
+    }
+
+    // First check if project exists and belongs to user
+    const getParams = {
+      TableName: process.env.DYNAMODB_PROJECTS_TABLE || 'gamani-projects',
+      Key: { id }
+    };
+
+    const existingProject = await dynamodb.get(getParams).promise();
+    
+    if (!existingProject.Item) {
+      res.status(404).json(createErrorResponse('Project not found'));
+      return;
+    }
+
+    if (existingProject.Item.userId !== req.user?.sub) {
+      res.status(403).json(createErrorResponse('Not authorized to delete this project'));
+      return;
+    }
+
+    const deleteParams = {
+      TableName: process.env.DYNAMODB_PROJECTS_TABLE || 'gamani-projects',
+      Key: { id }
+    };
+
+    console.log('🗑️ [PROJECTS API] Deleting project:', id);
+    
+    await dynamodb.delete(deleteParams).promise();
+    
+    console.log('✅ [PROJECTS API] Project deleted successfully');
+    res.json(createApiResponse({}, 'Project deleted successfully'));
+  } catch (error) {
+    console.error('❌ [PROJECTS API] Error deleting project:', error);
+    res.status(500).json(createErrorResponse('Failed to delete project'));
+  }
+});
+
 // AI routes using Google Generative AI
 app.post('/api/protected/ai/generate', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
@@ -232,8 +448,24 @@ app.post('/api/protected/ai/generate', async (req: AuthenticatedRequest, res: Re
       return;
     }
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
-    const result = await model.generateContent(prompt);
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
+    
+    // Enhanced prompt for game development
+    const gamePrompt = `You are a children's game developer. Create a complete, fun, interactive game in Hebrew based on this request: "${prompt}"
+
+Instructions:
+- Create a complete HTML page with embedded CSS and JavaScript
+- The game should be child-friendly and fun
+- Use Hebrew text for all UI elements and instructions
+- Make it interactive and engaging
+- Include clear game instructions in Hebrew
+- Use bright colors and appealing visuals
+- Ensure the game works on both desktop and mobile
+- The HTML should be complete and ready to display in an iframe
+
+Return ONLY the complete HTML code, starting with <!DOCTYPE html> and ending with </html>. Do not include any explanations or markdown formatting.`;
+
+    const result = await model.generateContent(gamePrompt);
     const response = await result.response;
     const text = response.text();
 

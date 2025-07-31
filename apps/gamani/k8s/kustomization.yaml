@@ -6,8 +6,9 @@ resources:
 - service.yaml
 - ingress.yaml
 
-commonLabels:
-  app: gamani
-  version: v1.0.0
+labels:
+- pairs:
+    app: gamani
+  includeSelectors: false
 
 namespace: apps

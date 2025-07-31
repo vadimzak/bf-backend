@@ -15,6 +15,7 @@ spec:
       labels:
         app: gamani
     spec:
+      serviceAccountName: gamani-service-account
       containers:
       - name: app
         image: 363397505860.dkr.ecr.il-central-1.amazonaws.com/gamani:latest
@@ -28,6 +29,16 @@ spec:
           value: "3002"
         - name: AWS_REGION
           value: "il-central-1"
+        - name: AWS_DEFAULT_REGION
+          value: "il-central-1"
+        - name: AWS_SDK_LOAD_CONFIG
+          value: "1"
+        - name: AWS_EC2_METADATA_DISABLED
+          value: "false"
+        - name: AWS_METADATA_SERVICE_TIMEOUT
+          value: "10"
+        - name: AWS_METADATA_SERVICE_NUM_ATTEMPTS
+          value: "3"
         - name: DYNAMODB_TABLE_NAME
           value: "gamani-items"
         livenessProbe:

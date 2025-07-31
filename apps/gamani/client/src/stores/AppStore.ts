@@ -1,5 +1,5 @@
 import { makeAutoObservable } from 'mobx';
-import { fetchAuthSession, getCurrentUser } from 'aws-amplify/auth';
+import { fetchAuthSession } from 'aws-amplify/auth';
 
 interface Item {
   id: string;
@@ -34,7 +34,7 @@ export class AppStore {
     this.error = error;
   }
 
-  private async getAuthHeaders(): Promise<HeadersInit> {
+  async getAuthHeaders(): Promise<HeadersInit> {
     try {
       console.log('🔐 [APPSTORE] Getting auth headers...');
       

@@ -1,0 +1,54 @@
+{
+  "app": {
+    "title": "Gamani - Game Creator",
+    "signOut": "Sign Out"
+  },
+  "dashboard": {
+    "header": {
+      "title": "Gamani - Game Creator",
+      "welcomeBack": "Welcome back, {{name}}"
+    },
+    "chat": {
+      "title": "Describe your game",
+      "subtitle": "Tell me what kind of game you want to create in Hebrew or English",
+      "placeholder": "Describe the game you want to create...",
+      "createButton": "Create Game",
+      "creating": "Creating...",
+      "examples": {
+        "title": "Example games you can create:",
+        "memory": "Create a memory card game for me",
+        "math": "Simple math quiz game",
+        "snake": "Colorful snake and fruits game",
+        "matching": "Memory matching game for kids"
+      }
+    },
+    "preview": {
+      "title": "Game Preview",
+      "generating": "Generating your game...",
+      "placeholder": "Your generated game will appear here",
+      "yourGame": "Your Game"
+    }
+  },
+  "projects": {
+    "title": "My Projects",
+    "newProject": "New Project",
+    "createProject": "Create Project",
+    "projectName": "Project Name",
+    "projectNamePlaceholder": "Enter project name...",
+    "noProjects": "No projects yet. Create your first project!",
+    "currentProject": "Current Project",
+    "switchProject": "Switch Project",
+    "deleteProject": "Delete Project",
+    "renameProject": "Rename Project",
+    "confirmDelete": "Are you sure you want to delete project '{{name}}'?",
+    "lastModified": "Last modified: {{date}}"
+  },
+  "errors": {
+    "gameGeneration": "Failed to generate game",
+    "network": "Network error",
+    "authentication": "Authentication error",
+    "projectCreation": "Failed to create project",
+    "projectLoad": "Failed to load projects",
+    "projectDelete": "Failed to delete project"
+  }
+}
