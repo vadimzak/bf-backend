@@ -190,7 +190,12 @@ const DashboardPage = observer(() => {
       <div className="bg-gray-800 border-b border-gray-700 px-4 py-3">
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-4">
-            <h1 className="text-xl font-bold">{t('dashboard.header.title')}</h1>
+            <button
+              onClick={handleSignOut}
+              className="px-3 py-1 text-sm bg-red-600 hover:bg-red-700 rounded transition-colors"
+            >
+              {t('app.signOut')}
+            </button>
             <button
               onClick={() => setShowProjectManager(!showProjectManager)}
               className="px-3 py-1 text-sm bg-gray-600 hover:bg-gray-700 rounded transition-colors"
@@ -203,16 +208,11 @@ const DashboardPage = observer(() => {
               </span>
             )}
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 text-right">
             <span className="text-sm text-gray-300">
               {authStore.user?.profile?.name || authStore.user?.username}
             </span>
-            <button
-              onClick={handleSignOut}
-              className="px-3 py-1 text-sm bg-red-600 hover:bg-red-700 rounded transition-colors"
-            >
-              {t('app.signOut')}
-            </button>
+            <h1 className="text-xl font-bold">{t('dashboard.header.title')}</h1>
           </div>
         </div>
       </div>
@@ -313,7 +313,7 @@ const DashboardPage = observer(() => {
         <div className={`w-full md:w-1/2 bg-gray-800 ${isRTL ? 'border-r' : 'border-l'} border-gray-700 flex flex-col`}>
           <div className="p-4 border-b border-gray-700">
             <div className="flex justify-between items-center mb-2">
-              <h2 className="text-lg font-semibold">{t('dashboard.chat.title')}</h2>
+              <h2 className="text-lg font-semibold text-right">{t('dashboard.chat.title')}</h2>
               {projectStore.currentProject && (
                 <div className="flex gap-2">
                   <button
@@ -341,7 +341,7 @@ const DashboardPage = observer(() => {
                 </div>
               )}
             </div>
-            <p className="text-sm text-gray-400">
+            <p className="text-sm text-gray-400 text-right">
               {t('dashboard.chat.subtitle')}
             </p>
           </div>
@@ -391,18 +391,7 @@ const DashboardPage = observer(() => {
                     </p>
                   )}
                 </div>
-              ) : (
-                /* Example prompts when history is hidden */
-                <div className="bg-gray-700 rounded-lg p-3">
-                  <h3 className="text-sm font-medium mb-2">{t('dashboard.chat.examples.title')}</h3>
-                  <ul className="text-sm text-gray-300 space-y-1">
-                    <li>• {t('dashboard.chat.examples.memory')}</li>
-                    <li>• {t('dashboard.chat.examples.math')}</li>
-                    <li>• {t('dashboard.chat.examples.snake')}</li>
-                    <li>• {t('dashboard.chat.examples.matching')}</li>
-                  </ul>
-                </div>
-              )}
+              ) : null}
               
               {/* Error display */}
               {error && (
