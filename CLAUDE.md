@@ -400,3 +400,4 @@ When migrating from Docker Compose:
 
 - Use AWS Secrets Manager for secrets instead of K8S Secrets
 - Never deploy without permission
+- Always install the latest versions of packages, use context7
