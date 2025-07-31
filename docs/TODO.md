@@ -1,8 +1,12 @@
-~ POD AWS Roles
-~ implement Gamani
 ~ understand how it is that the server had a non-latest image deployed
+- minimize CLAUDE.md
+- gamani - remove started page
+- generalize app-common boilerplage
+- fix playwrite
+
+- HMR
+- MOBX?
 - add envs?
-- add versioning and report it from the server
 - rewrite sh scripts in ts?
 ~ Grafana + Loki + dashboards
 - alerting

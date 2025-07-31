@@ -733,3 +733,4 @@ When migrating from Docker Compose:
 - check TS errors before completing or deploying
 - prefer to fail the server init if something is wrong (missing permissions / service fails to init)
 - do not deploy to prod without my permission
+- when I ask you to fix a problem, and you find a problem and fix it, don't be sure you fixed THE problem, you may have fixed another problem. either check yourself, or state that you fixed something, but don't say that the problem I reported is fixed

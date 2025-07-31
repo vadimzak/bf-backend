@@ -1,7 +1,7 @@
 import { observer } from 'mobx-react-lite';
 import { useStore } from '../stores';
 import { Navigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import ProjectManager from '../components/ProjectManager';
 
 const DashboardPage = observer(() => {
@@ -14,36 +14,16 @@ const DashboardPage = observer(() => {
   const [showChatHistory, setShowChatHistory] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [currentGameContext, setCurrentGameContext] = useState<string>('');
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   
-  // DEBUG: State for permissions debugging - DO NOT REMOVE
-  const [debugItemsResponse, setDebugItemsResponse] = useState<string>('');
-  const [debugItemsError, setDebugItemsError] = useState<string>('');
-
-  // DEBUG: Function to test items API permissions - DO NOT REMOVE
-  const debugItemsAPI = async () => {
-    try {
-      setDebugItemsError('');
-      setDebugItemsResponse('Testing items API...');
-      
-      const headers = await appStore.getAuthHeaders();
-      const response = await fetch('/api/protected/items', {
-        method: 'GET',
-        headers,
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const result = await response.json();
-      setDebugItemsResponse(`SUCCESS: ${JSON.stringify(result, null, 2)}`);
-      console.log('[DEBUG] Items API Response:', result);
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      setDebugItemsError(`ERROR: ${errorMsg}`);
-      console.error('[DEBUG] Items API Error:', error);
-    }
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
+
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    scrollToBottom();
+  }, [chatStore.currentMessages.length, isGenerating]);
 
   // Load chat history when project changes and restore latest game
   useEffect(() => {
@@ -85,12 +65,6 @@ const DashboardPage = observer(() => {
     }
   }, [chatStore.currentMessages, projectStore.currentProject, currentGameContext]);
 
-  // DEBUG: Auto-test items API on component mount - DO NOT REMOVE
-  useEffect(() => {
-    if (authStore.isAuthenticated) {
-      debugItemsAPI();
-    }
-  }, [authStore.isAuthenticated]);
 
   if (!authStore.isAuthenticated) {
     return <Navigate to="/login" replace />;
@@ -103,13 +77,40 @@ const DashboardPage = observer(() => {
   const handleConversation = async () => {
     if (!gamePrompt.trim()) return;
     
+    const currentPrompt = gamePrompt;
     setIsGenerating(true);
     setError(null);
     
+    // Clear the input immediately for better UX
+    setGamePrompt('');
+    
     try {
-      // Save user message to chat history for persistence
+      // Optimistic UI update - add user message to UI immediately
       if (projectStore.currentProject) {
-        await chatStore.saveMessage(projectStore.currentProject.id, 'user', gamePrompt);
+        // Create optimistic message for immediate UI feedback
+        const optimisticMessage = {
+          id: `temp-${Date.now()}`,
+          projectId: projectStore.currentProject.id,
+          role: 'user' as const,
+          content: currentPrompt,
+          timestamp: new Date().toISOString()
+        };
+        
+        // Add to UI immediately
+        chatStore.addMessage(optimisticMessage);
+        
+        // Save to database in the background (skip adding to UI since we already have optimistic version)
+        try {
+          const userMessage = await chatStore.saveMessage(projectStore.currentProject.id, 'user', currentPrompt, undefined, true);
+          
+          // Replace optimistic message with real one from server
+          if (userMessage) {
+            chatStore.replaceMessage(optimisticMessage.id, userMessage);
+          }
+        } catch (saveError) {
+          console.error('Failed to save user message:', saveError);
+          // Keep the optimistic message even if save fails
+        }
       }
 
       // Prepare conversation context from stored chat history
@@ -118,18 +119,12 @@ const DashboardPage = observer(() => {
         content: msg.content
       }));
 
-      // Add the current user message to the context
-      conversationContext.push({
-        role: 'user' as const,
-        content: gamePrompt
-      });
-
       const headers = await appStore.getAuthHeaders();
       const response = await fetch('/api/protected/ai/generate', {
         method: 'POST',
         headers,
         body: JSON.stringify({ 
-          prompt: gamePrompt,
+          prompt: currentPrompt,
           conversation: conversationContext,
           currentGame: generatedGame ? currentGameContext : null
         }),
@@ -179,12 +174,11 @@ const DashboardPage = observer(() => {
       } else {
         throw new Error(result.error || 'Failed to process request');
       }
-      
-      // Clear the input after successful processing
-      setGamePrompt('');
     } catch (error) {
       console.error('Failed to process conversation:', error);
       setError(error instanceof Error ? error.message : 'Failed to process request');
+      // Restore the input text if there was an error
+      setGamePrompt(currentPrompt);
     } finally {
       setIsGenerating(false);
     }
@@ -284,39 +278,6 @@ const DashboardPage = observer(() => {
         </div>
       )}
 
-      {/* DEBUG: Permissions Testing Section - DO NOT REMOVE */}
-      <div className="bg-gray-800 border-b border-gray-700 px-4 py-2">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <span className="text-sm font-medium text-yellow-400">🔧 DEBUG - Items API Test:</span>
-            <button
-              onClick={debugItemsAPI}
-              className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 rounded"
-            >
-              Test Again
-            </button>
-          </div>
-          <div className="text-xs">
-            {debugItemsError ? (
-              <span className="text-red-400">{debugItemsError}</span>
-            ) : debugItemsResponse ? (
-              <span className="text-green-400">
-                {debugItemsResponse.includes('SUCCESS') ? '✅ API Working' : debugItemsResponse}
-              </span>
-            ) : (
-              <span className="text-gray-400">Not tested</span>
-            )}
-          </div>
-        </div>
-        {(debugItemsResponse || debugItemsError) && (
-          <details className="mt-2">
-            <summary className="text-xs text-gray-400 cursor-pointer">Show Details</summary>
-            <pre className="text-xs bg-gray-900 p-2 mt-1 rounded overflow-x-auto">
-              {debugItemsError || debugItemsResponse}
-            </pre>
-          </details>
-        )}
-      </div>
 
       {/* Main Content - Split Layout */}
       <div className="flex h-[calc(100vh-64px)]">
@@ -420,83 +381,218 @@ const DashboardPage = observer(() => {
                 </div>
               )}
 
-              {/* Current Conversation - ChatGPT Style */}
-              {chatStore.currentMessages.length > 0 ? (
-                <div className="space-y-4">
-                  {chatStore.currentMessages.map((message) => (
-                    <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                      <div className={`max-w-[80%] rounded-lg p-3 ${
-                        message.role === 'user' 
-                          ? 'bg-blue-600 text-white' 
-                          : 'bg-gray-700 text-gray-200'
-                      }`}>
-                        <div className="text-sm">
-                          <div className="flex items-center gap-2 mb-1 justify-start">
-                            <span className={`font-medium text-xs ${
-                              message.role === 'user' ? 'text-blue-100' : 'text-green-300'
-                            }`}>
-                              {message.role === 'user' ? 'You' : 'Gamani'}
+              {/* Chat History Panel */}
+              {showChatHistory && projectStore.currentProject && (
+                <div className="bg-gray-850 border border-gray-600 rounded-lg p-4 mb-4">
+                  <div className="flex justify-between items-center mb-3">
+                    <h4 className="text-sm font-medium text-gray-300">Conversation History</h4>
+                    <button
+                      onClick={() => setShowChatHistory(false)}
+                      className="text-gray-400 hover:text-white text-sm"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  
+                  {chatStore.currentMessages.length > 0 ? (
+                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                      {chatStore.currentMessages.map((message, index) => (
+                        <div key={message.id} className="text-xs p-2 bg-gray-700 rounded border border-gray-600">
+                          <div className="flex justify-between items-start">
+                            <span className={`font-medium ${message.role === 'user' ? 'text-blue-300' : 'text-green-300'}`}>
+                              {message.role === 'user' ? 'You' : 'Gamani'}:
                             </span>
-                            <span className="text-xs opacity-70">
-                              {new Date(message.timestamp).toLocaleString()}
+                            <span className="text-gray-400">
+                              {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>
                           </div>
-                          <p className="break-words">
+                          <div className="text-gray-200 mt-1 line-clamp-2">
                             {message.content}
-                          </p>
+                          </div>
                           {message.gameCode && (
-                            <div className="mt-2 px-2 py-1 text-xs bg-green-600 rounded">
-                              🎮 Game Generated
-                            </div>
+                            <div className="text-green-300 text-xs mt-1">🎮 Game Generated</div>
                           )}
                         </div>
-                      </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="flex items-center justify-center h-full">
-                  <p className="text-gray-400 text-center">
-                    Start a conversation with Gamani...
-                  </p>
+                  ) : (
+                    <div className="text-xs text-gray-500 text-center py-2">
+                      No conversation history yet
+                    </div>
+                  )}
                 </div>
               )}
 
-              {/* Loading indicator for generation */}
-              {isGenerating && (
-                <div className="flex justify-start">
-                  <div className="bg-gray-700 rounded-lg p-3 max-w-[80%]">
-                    <div className="flex items-center gap-2">
-                      <div className="animate-spin w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full"></div>
-                      <p className="text-gray-300 text-sm">
-                        Creating your game...
+              {/* No Project Warning */}
+              {!projectStore.currentProject && (
+                <div className="bg-yellow-900/30 border border-yellow-600 rounded-lg p-4 mb-4">
+                  <div className="flex items-center gap-3">
+                    <span className="text-yellow-400 text-xl">⚠️</span>
+                    <div>
+                      <h4 className="text-yellow-200 font-medium">No Project Selected</h4>
+                      <p className="text-yellow-300 text-sm mt-1">
+                        Please create or select a project to start chatting. Click the "📁 → Projects" button above.
                       </p>
                     </div>
                   </div>
                 </div>
               )}
+
+              {/* Current Conversation - Enhanced ChatGPT Style */}
+              {projectStore.currentProject && chatStore.currentMessages.length > 0 ? (
+                <div className="space-y-6">
+                  {chatStore.currentMessages.map((message) => (
+                    <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} group`}>
+                      <div className={`max-w-[85%] ${message.role === 'user' ? 'order-2' : 'order-1'}`}>
+                        {/* Avatar and Name */}
+                        <div className={`flex items-center gap-2 mb-2 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                            message.role === 'user' 
+                              ? 'bg-blue-600 text-white' 
+                              : 'bg-green-600 text-white'
+                          }`}>
+                            {message.role === 'user' ? 'Y' : 'G'}
+                          </div>
+                          <span className={`font-medium text-sm ${
+                            message.role === 'user' ? 'text-blue-300' : 'text-green-300'
+                          }`}>
+                            {message.role === 'user' ? 'You' : 'Gamani'}
+                          </span>
+                          <span className="text-xs text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        
+                        {/* Message Content */}
+                        <div className={`rounded-2xl px-4 py-3 ${
+                          message.role === 'user' 
+                            ? 'bg-blue-600 text-white shadow-lg' 
+                            : 'bg-gray-700 text-gray-100 shadow-lg border border-gray-600'
+                        }`}>
+                          <div className="text-sm leading-relaxed">
+                            <p className="break-words whitespace-pre-wrap">
+                              {message.content}
+                            </p>
+                            {message.gameCode && (
+                              <div className="mt-3 px-3 py-2 bg-green-500/20 border border-green-500/30 rounded-lg">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-lg">🎮</span>
+                                  <span className="text-sm font-medium text-green-300">Game Generated</span>
+                                </div>
+                                <p className="text-xs text-green-200 mt-1 opacity-80">
+                                  Check the left panel to play your new game!
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : projectStore.currentProject ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center space-y-4">
+                    <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-green-500 rounded-full mx-auto flex items-center justify-center">
+                      <span className="text-2xl">🎮</span>
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-medium text-gray-300 mb-2">Welcome to Gamani!</h3>
+                      <p className="text-gray-400 text-sm max-w-md">
+                        Start a conversation! Ask me to create games, modify existing ones, or just chat about anything you'd like.
+                      </p>
+                      <div className="mt-4 space-y-2 text-xs text-gray-500">
+                        <p>• "Create a puzzle game"</p>
+                        <p>• "Make the background blue"</p>
+                        <p>• "What games can you create?"</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Loading indicator for generation */}
+              {isGenerating && (
+                <div className="flex justify-start group">
+                  <div className="max-w-[85%]">
+                    {/* Avatar and Name */}
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-6 h-6 rounded-full bg-green-600 text-white flex items-center justify-center text-xs font-bold">
+                        G
+                      </div>
+                      <span className="font-medium text-sm text-green-300">
+                        Gamani
+                      </span>
+                    </div>
+                    
+                    {/* Typing Indicator */}
+                    <div className="bg-gray-700 shadow-lg border border-gray-600 rounded-2xl px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex gap-1">
+                          <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                          <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                          <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                        </div>
+                        <p className="text-gray-300 text-sm">
+                          Thinking...
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* Scroll anchor */}
+              <div ref={messagesEndRef} />
             </div>
           </div>
           
           {/* Input area - Fixed at bottom */}
           <div className="p-4 border-t border-gray-700 bg-gray-800">
-            <div className="flex gap-2">
-              <textarea
-                value={gamePrompt}
-                onChange={(e) => setGamePrompt(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Ask something or request to create a game..."
-                className="flex-1 p-3 bg-gray-700 border border-gray-600 rounded-lg resize-none focus:outline-none focus:border-blue-500"
-                rows={3}
-                disabled={isGenerating}
-              />
-              <button
-                onClick={handleConversation}
-                disabled={isGenerating || !gamePrompt.trim()}
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors font-medium"
-              >
-                {isGenerating ? 'Creating...' : 'Send'}
-              </button>
+            <div className="max-w-4xl mx-auto">
+              <div className="relative">
+                <textarea
+                  value={gamePrompt}
+                  onChange={(e) => {
+                    if (e.target.value.length <= 2000) {
+                      setGamePrompt(e.target.value);
+                    }
+                  }}
+                  onKeyDown={handleKeyDown}
+                  placeholder={
+                    projectStore.currentProject 
+                      ? "Message Gamani... (try 'create a puzzle game' or 'what can you do?')"
+                      : "Please select a project first to start chatting..."
+                  }
+                  className="w-full p-4 pr-16 bg-gray-700 border border-gray-600 rounded-2xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400 shadow-lg"
+                  rows={gamePrompt.split('\n').length > 3 ? gamePrompt.split('\n').length : 3}
+                  style={{ maxHeight: '120px' }}
+                  disabled={isGenerating || !projectStore.currentProject}
+                  maxLength={2000}
+                />
+                <button
+                  onClick={handleConversation}
+                  disabled={isGenerating || !gamePrompt.trim() || !projectStore.currentProject}
+                  className="absolute right-2 bottom-2 w-10 h-10 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-xl transition-all duration-200 flex items-center justify-center shadow-lg hover:shadow-xl disabled:opacity-50"
+                  title={isGenerating ? 'Thinking...' : 'Send message'}
+                >
+                  {isGenerating ? (
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  ) : (
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+              <div className="flex justify-between items-center mt-2 px-1">
+                <div className="text-xs text-gray-500">
+                  Press Enter to send, Shift+Enter for new line
+                </div>
+                <div className="text-xs text-gray-500">
+                  {gamePrompt.length}/2000
+                </div>
+              </div>
             </div>
           </div>
         </div>

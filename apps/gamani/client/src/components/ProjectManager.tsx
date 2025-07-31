@@ -10,7 +10,20 @@ const ProjectManager = observer(() => {
   const [createLoading, setCreateLoading] = useState(false);
 
   useEffect(() => {
-    projectStore.fetchProjects();
+    const loadProjects = async () => {
+      await projectStore.fetchProjects();
+      
+      // Auto-create default project if none exist and user hasn't manually created one
+      if (projectStore.projects.length === 0 && !projectStore.currentProject) {
+        try {
+          await projectStore.createProject('My First Game Project', 'Default project for creating games');
+        } catch (error) {
+          console.error('Failed to create default project:', error);
+        }
+      }
+    };
+    
+    loadProjects();
   }, [projectStore]);
 
   const handleCreateProject = async () => {

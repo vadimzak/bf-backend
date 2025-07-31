@@ -196,9 +196,12 @@ app.use(express.static(path.join(__dirname, '..', '..', '..', '..', 'client', 'd
 
 // Request logging middleware
 app.use((req: Request, res: Response, next: NextFunction) => {
-  log('📡 [SERVER REQUEST]', `${req.method} ${req.path}`);
-  if (req.headers.authorization) {
-    log('📡 [SERVER REQUEST]', `Has authorization header: ${req.headers.authorization.substring(0, 20)}...`);
+  // Skip logging for health check requests
+  if (req.path !== '/health') {
+    log('📡 [SERVER REQUEST]', `${req.method} ${req.path}`);
+    if (req.headers.authorization) {
+      log('📡 [SERVER REQUEST]', `Has authorization header: ${req.headers.authorization.substring(0, 20)}...`);
+    }
   }
   next();
 });
@@ -770,27 +773,39 @@ app.post('/api/protected/ai/generate', async (req: AuthenticatedRequest, res: Re
       contextualPrompt += `${currentGame}\n\n`;
     }
 
-    // Enhanced prompt for game development with conversation context
-    const gamePrompt = `You are a children's game developer assistant. You maintain context across conversations and can modify existing games based on user requests.
+    // Enhanced prompt for natural conversation with game development capabilities
+    const gamePrompt = `You are Gamani, a friendly AI assistant that specializes in creating children's games. You can have natural conversations and help with game development when requested.
 
 ${contextualPrompt}Current user request: "${prompt}"
 
-Instructions:
-- If this is a modification request and you have previous game code, modify the existing game accordingly
-- If this is a new game request, create a complete, fun, interactive game in English
-- Create a complete HTML page with embedded CSS and JavaScript
-- The game should be child-friendly and fun
+Guidelines for responses:
+- Have natural, engaging conversations with users
+- Only create or modify games when the user explicitly requests it (e.g., "create a game", "make a racing game", "change the background color")
+- For general questions or conversation, respond naturally without generating games
+- When you do create/modify a game, always explain what you're doing in your response
+
+When creating or modifying games:
+- Create complete, fun, interactive games suitable for children
 - Use English text for all UI elements and instructions
-- Make it interactive and engaging
-- Include clear game instructions in English
-- Use bright colors and appealing visuals
-- Ensure the game works on both desktop and mobile
-- The HTML should be complete and ready to display in an iframe
-- If the user asks about something other than game creation/modification, respond conversationally but try to steer back to game development
+- Make games interactive and engaging with bright colors
+- Ensure games work on both desktop and mobile
+- Always wrap the HTML code in \`\`\`html code blocks
+- Provide a clear explanation of what you created or changed
+- Include game instructions in your explanation
 
-If you're creating/modifying a game, return ONLY the complete HTML code, starting with <!DOCTYPE html> and ending with </html>. Do not include any explanations or markdown formatting.
+Example response format when creating a game:
+"I'll create a fun [game type] for you! [Brief explanation of the game]
 
-If you're having a conversation, respond naturally in English.`;
+\`\`\`html
+<!DOCTYPE html>
+<html>
+<!-- Complete game code here -->
+</html>
+\`\`\`
+
+[Additional explanation of features, how to play, what makes it fun, etc.]"
+
+For conversations that don't involve games, simply respond naturally and helpfully. You can discuss games, programming, or anything else the user is interested in.`;
 
     const result = await genAI.models.generateContent({
       model: 'gemini-2.0-flash-exp',

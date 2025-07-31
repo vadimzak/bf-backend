@@ -27,6 +27,13 @@ export class ChatStore {
     this.messages.push(message);
   }
 
+  replaceMessage(oldMessageId: string, newMessage: ChatMessage) {
+    const messageIndex = this.messages.findIndex(m => m.id === oldMessageId);
+    if (messageIndex !== -1) {
+      this.messages[messageIndex] = newMessage;
+    }
+  }
+
   clearMessages() {
     this.messages = [];
   }
@@ -102,7 +109,7 @@ export class ChatStore {
     }
   }
 
-  async saveMessage(projectId: string, role: 'user' | 'assistant', content: string, gameCode?: string) {
+  async saveMessage(projectId: string, role: 'user' | 'assistant', content: string, gameCode?: string, skipAddToUI = false) {
     if (!projectId) return null;
 
     try {
@@ -119,7 +126,9 @@ export class ChatStore {
 
       const result = await response.json();
       if (result.success) {
-        this.addMessage(result.data.message);
+        if (!skipAddToUI) {
+          this.addMessage(result.data.message);
+        }
         return result.data.message;
       } else {
         throw new Error(result.error || 'Failed to save message');
