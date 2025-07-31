@@ -13,7 +13,13 @@
       ],
       "Resource": [
         "arn:aws:dynamodb:il-central-1:363397505860:table/gamani-items",
-        "arn:aws:dynamodb:il-central-1:363397505860:table/gamani-items/index/*"
+        "arn:aws:dynamodb:il-central-1:363397505860:table/gamani-items/index/*",
+        "arn:aws:dynamodb:il-central-1:363397505860:table/gamani-projects",
+        "arn:aws:dynamodb:il-central-1:363397505860:table/gamani-projects/index/*",
+        "arn:aws:dynamodb:il-central-1:363397505860:table/gamani-messages",
+        "arn:aws:dynamodb:il-central-1:363397505860:table/gamani-messages/index/*",
+        "arn:aws:dynamodb:il-central-1:363397505860:table/gamani-shared-games",
+        "arn:aws:dynamodb:il-central-1:363397505860:table/gamani-shared-games/index/*"
       ]
     },
     {

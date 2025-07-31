@@ -9,8 +9,10 @@ import dotenv from 'dotenv';
 // AWS JWT Verify for Cognito
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
 
-// AWS SDK for DynamoDB and Secrets Manager
-import AWS from 'aws-sdk';
+// AWS SDK v3 for DynamoDB and Secrets Manager
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, ScanCommand, PutCommand, GetCommand, UpdateCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
+import { SecretsManagerClient, GetSecretValueCommand } from '@aws-sdk/client-secrets-manager';
 
 // Google Generative AI
 import { GoogleGenAI } from '@google/genai';
@@ -56,24 +58,28 @@ interface AIGenerateRequest {
 const app = express();
 const PORT = process.env.PORT || 3002;
 
-// AWS Configuration
-// Use environment credentials in development, IRSA in production
+// AWS SDK v3 Configuration
+const awsRegion = process.env.AWS_REGION || 'il-central-1';
+
+// AWS SDK v3 automatically picks up IRSA credentials when environment variables are present
+console.log('🔧 [AWS] Initializing AWS SDK v3 clients');
+console.log('🔧 [AWS] Region:', awsRegion);
+
 if (process.env.NODE_ENV !== 'production') {
-  console.log('🔧 [AWS] Using environment credentials for development (minimal permissions)');
-  AWS.config.credentials = new AWS.EnvironmentCredentials('AWS');
-  console.log('✅ [AWS] Using minimal permissions from assumed role');
+  console.log('🔧 [AWS] Development mode - using environment credentials');
 } else {
-  console.log('🔧 [AWS] Using IRSA (IAM Roles for Service Accounts) for production');
-  // In production, use default credential chain which will pick up IRSA credentials
-  // The service account is annotated with the specific IAM role ARN
-  console.log('✅ [AWS] Using IRSA with per-pod IAM role permissions');
+  console.log('🔧 [AWS] Production mode - using IRSA credentials');
+  if (process.env.AWS_ROLE_ARN && process.env.AWS_WEB_IDENTITY_TOKEN_FILE) {
+    console.log('✅ [AWS] IRSA environment variables detected');
+    console.log('🔧 [AWS] Role ARN:', process.env.AWS_ROLE_ARN);
+  }
 }
 
-AWS.config.region = process.env.AWS_REGION || 'il-central-1';
+// Initialize AWS SDK v3 clients
+const dynamoClient = new DynamoDBClient({ region: awsRegion });
+const secretsManagerClient = new SecretsManagerClient({ region: awsRegion });
 
-const secretsManager = new AWS.SecretsManager({
-  region: process.env.AWS_REGION || 'il-central-1'
-});
+console.log('✅ [AWS] SDK v3 clients initialized');
 
 // Initialize Cognito JWT Verifier
 const jwtVerifier = CognitoJwtVerifier.create({
@@ -84,9 +90,16 @@ const jwtVerifier = CognitoJwtVerifier.create({
 
 console.log('✅ Cognito JWT Verifier initialized');
 
-// Initialize AWS DynamoDB
-const dynamodb = new AWS.DynamoDB.DocumentClient({
-  region: process.env.AWS_REGION || 'il-central-1'
+// Initialize DynamoDB Document Client (AWS SDK v3)
+const dynamodb = DynamoDBDocumentClient.from(dynamoClient, {
+  marshallOptions: {
+    convertEmptyValues: false,
+    removeUndefinedValues: true,
+    convertClassInstanceToMap: false,
+  },
+  unmarshallOptions: {
+    wrapNumbers: false,
+  },
 });
 
 // Initialize Google Generative AI (will be set after fetching from Secrets Manager)
@@ -96,9 +109,10 @@ let genAI: GoogleGenAI;
 async function initializeGoogleAI() {
   try {
     console.log('🔐 [GOOGLE AI] Fetching API key from Secrets Manager...');
-    const result = await secretsManager.getSecretValue({
+    const command = new GetSecretValueCommand({
       SecretId: 'gamani/google-ai-api-key'
-    }).promise();
+    });
+    const result = await secretsManagerClient.send(command);
     
     const apiKey = result.SecretString;
     if (!apiKey || apiKey === 'PLACEHOLDER_KEY_NEEDS_UPDATE') {
@@ -252,7 +266,8 @@ app.get('/api/protected/items', async (req: AuthenticatedRequest, res: Response)
     console.log('🔍 [ITEMS API] DynamoDB params:', JSON.stringify(params, null, 2));
     console.log('🔍 [ITEMS API] About to call dynamodb.scan()...');
     
-    const result = await dynamodb.scan(params).promise();
+    const command = new ScanCommand(params);
+    const result = await dynamodb.send(command);
     
     console.log('✅ [ITEMS API] DynamoDB scan completed successfully');
     console.log('✅ [ITEMS API] Result:', JSON.stringify(result, null, 2));
@@ -283,7 +298,8 @@ app.post('/api/protected/items', async (req: AuthenticatedRequest, res: Response
       Item: item
     };
 
-    await dynamodb.put(params).promise();
+    const putCommand = new PutCommand(params);
+    await dynamodb.send(putCommand);
     res.json(createApiResponse({ item }, 'Item created successfully'));
   } catch (error) {
     console.error('DynamoDB error:', error);
@@ -307,7 +323,8 @@ app.get('/api/protected/projects', async (req: AuthenticatedRequest, res: Respon
 
     console.log('🔍 [PROJECTS API] DynamoDB params:', JSON.stringify(params, null, 2));
     
-    const result = await dynamodb.scan(params).promise();
+    const command = new ScanCommand(params);
+    const result = await dynamodb.send(command);
     
     console.log('✅ [PROJECTS API] DynamoDB scan completed successfully');
     console.log('✅ [PROJECTS API] Result:', JSON.stringify(result, null, 2));
@@ -346,7 +363,8 @@ app.post('/api/protected/projects', async (req: AuthenticatedRequest, res: Respo
 
     console.log('📝 [PROJECTS API] Creating project:', JSON.stringify(project, null, 2));
     
-    await dynamodb.put(params).promise();
+    const putCommand = new PutCommand(params);
+    await dynamodb.send(putCommand);
     
     console.log('✅ [PROJECTS API] Project created successfully');
     res.json(createApiResponse({ project }, 'Project created successfully'));
@@ -374,7 +392,8 @@ app.put('/api/protected/projects/:id', async (req: AuthenticatedRequest, res: Re
       Key: { id }
     };
 
-    const existingProject = await dynamodb.get(getParams).promise();
+    const getCommand = new GetCommand(getParams);
+    const existingProject = await dynamodb.send(getCommand);
     
     if (!existingProject.Item) {
       res.status(404).json(createErrorResponse('Project not found'));
@@ -410,12 +429,13 @@ app.put('/api/protected/projects/:id', async (req: AuthenticatedRequest, res: Re
       UpdateExpression: `SET ${updateExpression.join(', ')}`,
       ExpressionAttributeValues: expressionAttributeValues,
       ...(Object.keys(expressionAttributeNames).length > 0 && { ExpressionAttributeNames: expressionAttributeNames }),
-      ReturnValues: 'ALL_NEW'
+      ReturnValues: 'ALL_NEW' as const
     };
 
     console.log('📝 [PROJECTS API] Updating project:', JSON.stringify(updateParams, null, 2));
     
-    const result = await dynamodb.update(updateParams).promise();
+    const updateCommand = new UpdateCommand(updateParams);
+    const result = await dynamodb.send(updateCommand);
     
     console.log('✅ [PROJECTS API] Project updated successfully');
     res.json(createApiResponse({ project: result.Attributes }, 'Project updated successfully'));
@@ -442,7 +462,8 @@ app.delete('/api/protected/projects/:id', async (req: AuthenticatedRequest, res:
       Key: { id }
     };
 
-    const existingProject = await dynamodb.get(getParams).promise();
+    const getCommand = new GetCommand(getParams);
+    const existingProject = await dynamodb.send(getCommand);
     
     if (!existingProject.Item) {
       res.status(404).json(createErrorResponse('Project not found'));
@@ -461,7 +482,8 @@ app.delete('/api/protected/projects/:id', async (req: AuthenticatedRequest, res:
 
     console.log('🗑️ [PROJECTS API] Deleting project:', id);
     
-    await dynamodb.delete(deleteParams).promise();
+    const deleteCommand = new DeleteCommand(deleteParams);
+    await dynamodb.send(deleteCommand);
     
     console.log('✅ [PROJECTS API] Project deleted successfully');
     res.json(createApiResponse({}, 'Project deleted successfully'));
@@ -489,7 +511,8 @@ app.get('/api/protected/projects/:id/messages', async (req: AuthenticatedRequest
       Key: { id: projectId }
     };
 
-    const projectResult = await dynamodb.get(projectParams).promise();
+    const projectGetCommand = new GetCommand(projectParams);
+    const projectResult = await dynamodb.send(projectGetCommand);
     
     if (!projectResult.Item) {
       res.status(404).json(createErrorResponse('Project not found'));
@@ -512,7 +535,8 @@ app.get('/api/protected/projects/:id/messages', async (req: AuthenticatedRequest
 
     console.log('💬 [CHAT API] Fetching messages for project:', projectId);
     
-    const result = await dynamodb.scan(params).promise();
+    const command = new ScanCommand(params);
+    const result = await dynamodb.send(command);
     
     // Sort messages by timestamp
     const messages = (result.Items || []).sort((a, b) => 
@@ -555,7 +579,8 @@ app.post('/api/protected/projects/:id/messages', async (req: AuthenticatedReques
       Key: { id: projectId }
     };
 
-    const projectResult = await dynamodb.get(projectParams).promise();
+    const projectGetCommand = new GetCommand(projectParams);
+    const projectResult = await dynamodb.send(projectGetCommand);
     
     if (!projectResult.Item) {
       res.status(404).json(createErrorResponse('Project not found'));
@@ -584,7 +609,8 @@ app.post('/api/protected/projects/:id/messages', async (req: AuthenticatedReques
 
     console.log('💬 [CHAT API] Saving message:', JSON.stringify(message, null, 2));
     
-    await dynamodb.put(params).promise();
+    const putCommand = new PutCommand(params);
+    await dynamodb.send(putCommand);
     
     console.log('✅ [CHAT API] Message saved successfully');
     res.json(createApiResponse({ message }, 'Message saved successfully'));
@@ -611,7 +637,8 @@ app.delete('/api/protected/projects/:id/messages', async (req: AuthenticatedRequ
       Key: { id: projectId }
     };
 
-    const projectResult = await dynamodb.get(projectParams).promise();
+    const projectGetCommand = new GetCommand(projectParams);
+    const projectResult = await dynamodb.send(projectGetCommand);
     
     if (!projectResult.Item) {
       res.status(404).json(createErrorResponse('Project not found'));
@@ -632,7 +659,8 @@ app.delete('/api/protected/projects/:id/messages', async (req: AuthenticatedRequ
       }
     };
 
-    const scanResult = await dynamodb.scan(scanParams).promise();
+    const scanCommand = new ScanCommand(scanParams);
+    const scanResult = await dynamodb.send(scanCommand);
     const messages = scanResult.Items || [];
 
     console.log('💬 [CHAT API] Found', messages.length, 'messages to delete for project:', projectId);
@@ -643,7 +671,8 @@ app.delete('/api/protected/projects/:id/messages', async (req: AuthenticatedRequ
         TableName: process.env.DYNAMODB_MESSAGES_TABLE || 'gamani-messages',
         Key: { id: message.id }
       };
-      return dynamodb.delete(deleteParams).promise();
+      const deleteCommand = new DeleteCommand(deleteParams);
+      return dynamodb.send(deleteCommand);
     });
 
     await Promise.all(deletePromises);
@@ -701,6 +730,160 @@ Return ONLY the complete HTML code, starting with <!DOCTYPE html> and ending wit
   } catch (error) {
     console.error('Google AI error:', error);
     res.status(500).json(createErrorResponse('Failed to generate AI response'));
+  }
+});
+
+// Game Sharing API Endpoints
+
+// Share a game (protected endpoint)
+app.post('/api/protected/games/share', authenticateCognito, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { title, content, description } = req.body;
+    const userId = req.user?.sub;
+
+    if (!title || !content) {
+      res.status(400).json(createErrorResponse('Title and content are required'));
+      return;
+    }
+
+    // Generate a unique share ID
+    const shareId = uuidv4();
+    const now = new Date().toISOString();
+
+    const sharedGame = {
+      shareId,
+      userId,
+      title,
+      content, // HTML game content
+      description: description || '',
+      createdAt: now,
+      accessCount: 0
+    };
+
+    // Save to DynamoDB
+    const shareGameCommand = new PutCommand({
+      TableName: 'gamani-shared-games',
+      Item: sharedGame
+    });
+    await dynamodb.send(shareGameCommand);
+
+    res.json(createApiResponse({ 
+      shareId,
+      shareUrl: `${req.protocol}://${req.get('host')}/shared/${shareId}`
+    }, 'Game shared successfully'));
+  } catch (error) {
+    console.error('Share game error:', error);
+    res.status(500).json(createErrorResponse('Failed to share game'));
+  }
+});
+
+// Get shared game (public endpoint - no authentication required)
+app.get('/api/games/:shareId', async (req: Request, res: Response) => {
+  try {
+    const { shareId } = req.params;
+
+    const getSharedGameCommand = new GetCommand({
+      TableName: 'gamani-shared-games',
+      Key: { shareId }
+    });
+    const result = await dynamodb.send(getSharedGameCommand);
+
+    if (!result.Item) {
+      res.status(404).json(createErrorResponse('Shared game not found'));
+      return;
+    }
+
+    // Increment access count
+    const incrementCommand = new UpdateCommand({
+      TableName: 'gamani-shared-games',
+      Key: { shareId },
+      UpdateExpression: 'SET accessCount = accessCount + :inc',
+      ExpressionAttributeValues: {
+        ':inc': 1
+      }
+    });
+    await dynamodb.send(incrementCommand);
+
+    // Return game data without sensitive information
+    const gameData = {
+      shareId: result.Item.shareId,
+      title: result.Item.title,
+      content: result.Item.content,
+      description: result.Item.description,
+      createdAt: result.Item.createdAt,
+      accessCount: (result.Item.accessCount || 0) + 1
+    };
+
+    res.json(createApiResponse(gameData, 'Shared game retrieved successfully'));
+  } catch (error) {
+    console.error('Get shared game error:', error);
+    res.status(500).json(createErrorResponse('Failed to retrieve shared game'));
+  }
+});
+
+// Get user's shared games (protected endpoint)
+app.get('/api/protected/games/shared', authenticateCognito, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.sub;
+
+    const scanSharedGamesCommand = new ScanCommand({
+      TableName: 'gamani-shared-games',
+      FilterExpression: 'userId = :userId',
+      ExpressionAttributeValues: {
+        ':userId': userId
+      }
+    });
+    const result = await dynamodb.send(scanSharedGamesCommand);
+
+    const sharedGames = result.Items?.map(item => ({
+      shareId: item.shareId,
+      title: item.title,
+      description: item.description,
+      createdAt: item.createdAt,
+      accessCount: item.accessCount || 0
+    })) || [];
+
+    res.json(createApiResponse(sharedGames, 'Shared games retrieved successfully'));
+  } catch (error) {
+    console.error('Get shared games error:', error);
+    res.status(500).json(createErrorResponse('Failed to retrieve shared games'));
+  }
+});
+
+// Delete shared game (protected endpoint)
+app.delete('/api/protected/games/:shareId', authenticateCognito, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { shareId } = req.params;
+    const userId = req.user?.sub;
+
+    // First check if the game exists and belongs to the user
+    const getSharedGameCommand = new GetCommand({
+      TableName: 'gamani-shared-games',
+      Key: { shareId }
+    });
+    const result = await dynamodb.send(getSharedGameCommand);
+
+    if (!result.Item) {
+      res.status(404).json(createErrorResponse('Shared game not found'));
+      return;
+    }
+
+    if (result.Item.userId !== userId) {
+      res.status(403).json(createErrorResponse('Not authorized to delete this shared game'));
+      return;
+    }
+
+    // Delete the shared game
+    const deleteSharedGameCommand = new DeleteCommand({
+      TableName: 'gamani-shared-games',
+      Key: { shareId }
+    });
+    await dynamodb.send(deleteSharedGameCommand);
+
+    res.json(createApiResponse({}, 'Shared game deleted successfully'));
+  } catch (error) {
+    console.error('Delete shared game error:', error);
+    res.status(500).json(createErrorResponse('Failed to delete shared game'));
   }
 });
 

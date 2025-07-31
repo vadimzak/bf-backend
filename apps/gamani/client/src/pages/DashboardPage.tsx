@@ -14,6 +14,7 @@ const DashboardPage = observer(() => {
   const [error, setError] = useState<string | null>(null);
   const [showProjectManager, setShowProjectManager] = useState(false);
   const [showChatHistory, setShowChatHistory] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
   
   // DEBUG: State for permissions debugging - DO NOT REMOVE
   const [debugItemsResponse, setDebugItemsResponse] = useState<string>('');
@@ -136,6 +137,53 @@ const DashboardPage = observer(() => {
     }
   };
 
+  const shareGame = async () => {
+    if (!generatedGame) return;
+    
+    setIsSharing(true);
+    
+    try {
+      const gameTitle = `Game created: ${new Date().toLocaleString()}`;
+      const headers = await appStore.getAuthHeaders();
+      
+      const response = await fetch('/api/protected/games/share', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          title: gameTitle,
+          content: generatedGame,
+          description: gamePrompt
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      if (result.success) {
+        const shareUrl = result.data.shareUrl;
+        
+        // Copy URL to clipboard
+        try {
+          await navigator.clipboard.writeText(shareUrl);
+          alert(t('dashboard.preview.shareSuccess', { url: shareUrl }));
+        } catch (clipboardError) {
+          // Fallback: show URL in prompt for manual copying
+          prompt(t('dashboard.preview.shareFallback'), shareUrl);
+        }
+      } else {
+        throw new Error(result.error || 'Failed to share game');
+      }
+    } catch (error) {
+      console.error('Failed to share game:', error);
+      alert(t('dashboard.preview.shareError'));
+    } finally {
+      setIsSharing(false);
+    }
+  };
+
   return (
     <div className={`min-h-screen bg-gray-900 text-white ${isRTL ? 'rtl' : 'ltr'}`} dir={isRTL ? 'rtl' : 'ltr'}>
       {/* Header */}
@@ -215,7 +263,18 @@ const DashboardPage = observer(() => {
         {/* Left Panel - Game Preview */}
         <div className="hidden md:flex md:w-1/2 bg-gray-900 flex flex-col">
           <div className="p-4 border-b border-gray-700">
-            <h2 className="text-lg font-semibold">{t('dashboard.preview.title')}</h2>
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-semibold">{t('dashboard.preview.title')}</h2>
+              {generatedGame && (
+                <button
+                  onClick={shareGame}
+                  disabled={isSharing}
+                  className="px-3 py-1 text-sm bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded transition-colors"
+                >
+                  {isSharing ? t('dashboard.preview.sharing') : t('dashboard.preview.share')}
+                </button>
+              )}
+            </div>
           </div>
           
           <div className="flex-1 p-4">
@@ -391,12 +450,21 @@ const DashboardPage = observer(() => {
           <div className="absolute bottom-0 left-0 right-0 bg-gray-900 rounded-t-lg max-h-[80vh] flex flex-col">
             <div className="p-4 border-b border-gray-700 flex justify-between items-center">
               <h3 className="text-lg font-semibold">{t('dashboard.preview.yourGame')}</h3>
-              <button
-                onClick={() => setGeneratedGame('')}
-                className="text-gray-400 hover:text-white"
-              >
-                ✕
-              </button>
+              <div className="flex gap-2 items-center">
+                <button
+                  onClick={shareGame}
+                  disabled={isSharing}
+                  className="px-3 py-1 text-sm bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded transition-colors"
+                >
+                  {isSharing ? t('dashboard.preview.sharing') : t('dashboard.preview.share')}
+                </button>
+                <button
+                  onClick={() => setGeneratedGame('')}
+                  className="text-gray-400 hover:text-white"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
             <div className="flex-1 p-4">
               <iframe

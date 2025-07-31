@@ -26,6 +26,9 @@
   "author": "Vadim Zak",
   "license": "ISC",
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.857.0",
+    "@aws-sdk/client-secrets-manager": "^3.857.0",
+    "@aws-sdk/lib-dynamodb": "^3.857.0",
     "@bf-backend/server-core": "file:../../libs/server-core",
     "@google/genai": "^1.12.0",
     "@types/cors": "^2.8.17",
@@ -33,7 +36,6 @@
     "@types/node": "18.16.9",
     "@types/uuid": "^9.0.8",
     "aws-jwt-verify": "^5.1.0",
-    "aws-sdk": "^2.1400.0",
     "cors": "^2.8.5",
     "dotenv": "^16.0.3",
     "express": "^4.18.2",

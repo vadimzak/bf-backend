@@ -36,7 +36,12 @@
       "title": "Game Preview",
       "generating": "Generating your game...",
       "placeholder": "Your generated game will appear here",
-      "yourGame": "Your Game"
+      "yourGame": "Your Game",
+      "share": "Share",
+      "sharing": "Sharing...",
+      "shareSuccess": "Game shared successfully! Link copied to clipboard: {{url}}",
+      "shareFallback": "Game shared! Copy this link:",
+      "shareError": "Failed to share game. Please try again."
     }
   },
   "projects": {

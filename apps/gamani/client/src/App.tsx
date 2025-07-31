@@ -7,6 +7,7 @@ import './config/aws-config'; // Initialize Amplify
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
+import SharedGamePage from './pages/SharedGamePage';
 import { useStore } from './stores';
 
 const AppContent = observer(() => {
@@ -90,6 +91,7 @@ const AppContent = observer(() => {
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/shared/:shareId" element={<SharedGamePage />} />
         </Routes>
       </div>
     </Router>

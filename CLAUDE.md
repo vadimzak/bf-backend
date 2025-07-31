@@ -581,7 +581,8 @@ When migrating from Docker Compose:
 
 - Use AWS Secrets Manager for secrets instead of K8S Secrets
 - Never deploy without permission
-- Always install the latest versions of NPM packages, use context7
+- Always install the latest versions of NPM packages, use context7, if unavailable - Fetch from https://www.npmjs.com, NEVER assume a version without consulting a tool or MCP
 - Use Playwrite MCP to perform e2e borwser tests
 - TypeScript - use types instead of interfaces
 - don't prematurely put in ENV vars values that do not have different values
+- check TS errors before completing or deploying
