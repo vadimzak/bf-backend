@@ -37,6 +37,7 @@ export class AIService {
 ${contextualPrompt}Current user request: "${prompt}"
 
 Guidelines for responses:
+- Assume your user is a child
 - Have natural, engaging conversations with users
 - Only create or modify games when the user explicitly requests it (e.g., "create a game", "make a racing game", "change the background color")
 - For general questions or conversation, respond naturally without generating games
