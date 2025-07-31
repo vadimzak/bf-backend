@@ -2,22 +2,13 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID
+  apiKey: 'AIzaSyBPBMw8Xiv8W_40fjL6p8pCaWwm_s5R_KU',
+  authDomain: 'vzcreations.firebaseapp.com',
+  projectId: 'vzcreations',
+  storageBucket: 'vzcreations.firebasestorage.app',
+  messagingSenderId: '799594505142',
+  appId: '1:799594505142:web:80f0c81ba7f086aed81717'
 };
-
-// Validate required configuration
-const requiredKeys = ['apiKey', 'authDomain', 'projectId', 'appId'];
-const missingKeys = requiredKeys.filter(key => !firebaseConfig[key as keyof typeof firebaseConfig]);
-
-if (missingKeys.length > 0) {
-  console.error('❌ [FIREBASE] Missing configuration:', missingKeys);
-  throw new Error(`Missing Firebase configuration: ${missingKeys.join(', ')}`);
-}
 
 console.log('🔧 [FIREBASE] Initializing with project:', firebaseConfig.projectId);
 
