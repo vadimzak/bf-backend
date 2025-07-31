@@ -1,0 +1,27 @@
+{
+  "name": "Gamani - AI Game Creator",
+  "short_name": "Gamani",
+  "description": "Child-friendly AI-assisted game development tool",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1f2937",
+  "theme_color": "#2563eb",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png", 
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["games", "education", "productivity"],
+  "lang": "en",
+  "dir": "ltr"
+}

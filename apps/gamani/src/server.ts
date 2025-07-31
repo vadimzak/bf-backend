@@ -808,7 +808,7 @@ Example response format when creating a game:
 For conversations that don't involve games, simply respond naturally and helpfully. You can discuss games, programming, or anything else the user is interested in.`;
 
     const result = await genAI.models.generateContent({
-      model: 'gemini-2.0-flash-exp',
+      model: 'gemini-2.5-pro',
       contents: [{
         role: 'user',
         parts: [{ text: gamePrompt }]

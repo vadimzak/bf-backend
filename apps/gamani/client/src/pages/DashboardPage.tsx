@@ -15,10 +15,41 @@ const DashboardPage = observer(() => {
   const [isSharing, setIsSharing] = useState(false);
   const [currentGameContext, setCurrentGameContext] = useState<string>('');
   const [hasInitialized, setHasInitialized] = useState(false);
+  const [activePanel, setActivePanel] = useState<'chat' | 'preview'>('chat');
+  const [showGameModal, setShowGameModal] = useState(false);
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  // Handle touch events for swipe navigation
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchEnd(null); // otherwise the swipe is fired even with usual touch events
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+
+  const handleTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > 50;
+    const isRightSwipe = distance < -50;
+
+    if (isLeftSwipe && activePanel === 'chat' && generatedGame) {
+      setActivePanel('preview');
+      setShowGameModal(true);
+    }
+    if (isRightSwipe && activePanel === 'preview') {
+      setActivePanel('chat');
+      setShowGameModal(false);
+    }
   };
 
   // Scroll to bottom when messages change
@@ -262,31 +293,63 @@ const DashboardPage = observer(() => {
       {/* Header */}
       <div className="bg-gray-800 border-b border-gray-700 px-4 py-3">
         <div className="flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <h1 className="text-xl font-bold">Gamani - Game Creator</h1>
+          <div className="flex items-center gap-2 md:gap-4">
+            <h1 className="text-lg md:text-xl font-bold truncate">Gamani</h1>
             <button
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="px-3 py-1 text-sm bg-gray-600 hover:bg-gray-700 rounded transition-colors"
+              className="px-2 md:px-3 py-1 text-xs md:text-sm bg-gray-600 hover:bg-gray-700 rounded transition-colors"
             >
-              {sidebarCollapsed ? '📁 →' : '📁 ←'} Projects
+              <span className="hidden sm:inline">{sidebarCollapsed ? '📁 →' : '📁 ←'} Projects</span>
+              <span className="sm:hidden">📁</span>
             </button>
             {projectStore.currentProject && (
-              <span className="text-sm text-blue-300">
+              <span className="text-xs md:text-sm text-blue-300 truncate max-w-24 md:max-w-none">
                 📝 {projectStore.currentProject.name}
               </span>
             )}
           </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-300">
+          <div className="flex items-center gap-2 md:gap-4">
+            <span className="text-xs md:text-sm text-gray-300 hidden sm:block">
               {authStore.user?.profile?.name || authStore.user?.username}
             </span>
             <button
               onClick={handleSignOut}
-              className="px-3 py-1 text-sm bg-red-600 hover:bg-red-700 rounded transition-colors"
+              className="px-2 md:px-3 py-1 text-xs md:text-sm bg-red-600 hover:bg-red-700 rounded transition-colors"
             >
-              Sign Out
+              <span className="hidden sm:inline">Sign Out</span>
+              <span className="sm:hidden">Exit</span>
             </button>
           </div>
+        </div>
+        
+        {/* Mobile Panel Switcher */}
+        <div className="md:hidden mt-3 flex bg-gray-700 rounded-lg p-1">
+          <button
+            onClick={() => setActivePanel('chat')}
+            className={`flex-1 py-2 px-4 text-sm font-medium rounded-md transition-colors ${
+              activePanel === 'chat'
+                ? 'bg-blue-600 text-white'
+                : 'text-gray-300 hover:text-white hover:bg-gray-600'
+            }`}
+          >
+            💬 Chat
+          </button>
+          <button
+            onClick={() => {
+              setActivePanel('preview');
+              if (generatedGame) setShowGameModal(true);
+            }}
+            className={`flex-1 py-2 px-4 text-sm font-medium rounded-md transition-colors relative ${
+              activePanel === 'preview'
+                ? 'bg-green-600 text-white'
+                : 'text-gray-300 hover:text-white hover:bg-gray-600'
+            }`}
+          >
+            🎮 Preview
+            {generatedGame && (
+              <span className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border border-gray-800"></span>
+            )}
+          </button>
         </div>
       </div>
 
@@ -361,15 +424,23 @@ const DashboardPage = observer(() => {
         </div>
 
         {/* Right Panel - Chat Interface */}
-        <div className="w-full md:flex-1 bg-gray-800 border-l border-gray-700 flex flex-col">
-          <div className="p-4 border-b border-gray-700">
+        <div 
+          className={`w-full md:flex-1 bg-gray-800 md:border-l border-gray-700 flex flex-col ${
+            activePanel === 'chat' ? 'flex' : 'hidden md:flex'
+          }`}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
+          <div className="p-3 md:p-4 border-b border-gray-700">
             <div className="flex justify-between items-center mb-2">
-              <div className="flex gap-2">
+              <div className="flex gap-1 md:gap-2 flex-wrap">
                 <button
                   onClick={() => setShowChatHistory(!showChatHistory)}
-                  className="px-2 py-1 text-xs bg-gray-600 hover:bg-gray-700 rounded transition-colors"
+                  className="px-2 py-1 text-xs bg-gray-600 hover:bg-gray-700 rounded transition-colors touch-manipulation"
                 >
-                  💬 Chat History
+                  <span className="hidden sm:inline">💬 Chat History</span>
+                  <span className="sm:hidden">💬 History</span>
                 </button>
                 {chatStore.hasMessages && (
                   <button
@@ -382,9 +453,10 @@ const DashboardPage = observer(() => {
                         }
                       }
                     }}
-                    className="px-2 py-1 text-xs bg-red-600 hover:bg-red-700 rounded transition-colors"
+                    className="px-2 py-1 text-xs bg-red-600 hover:bg-red-700 rounded transition-colors touch-manipulation"
                   >
-                    🗑️ Clear History
+                    <span className="hidden sm:inline">🗑️ Clear History</span>
+                    <span className="sm:hidden">🗑️ Clear</span>
                   </button>
                 )}
               </div>
@@ -394,7 +466,7 @@ const DashboardPage = observer(() => {
           {/* Chat Messages Area - ChatGPT Style */}
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* Chat Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-3 md:space-y-4">
               {/* Error display at top */}
               {error && (
                 <div className="bg-red-900/50 border border-red-700 rounded-lg p-3">
@@ -456,31 +528,31 @@ const DashboardPage = observer(() => {
 
               {/* Current Conversation - Enhanced ChatGPT Style */}
               {chatStore.currentMessages.length > 0 ? (
-                <div className="space-y-6">
+                <div className="space-y-4 md:space-y-6">
                   {chatStore.currentMessages.map((message) => (
                     <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} group`}>
-                      <div className={`max-w-[85%] ${message.role === 'user' ? 'order-2' : 'order-1'}`}>
+                      <div className={`max-w-[90%] md:max-w-[85%] ${message.role === 'user' ? 'order-2' : 'order-1'}`}>
                         {/* Avatar and Name */}
-                        <div className={`flex items-center gap-2 mb-2 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                        <div className={`flex items-center gap-1.5 md:gap-2 mb-1.5 md:mb-2 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                          <div className={`w-5 h-5 md:w-6 md:h-6 rounded-full flex items-center justify-center text-xs font-bold ${
                             message.role === 'user' 
                               ? 'bg-blue-600 text-white' 
                               : 'bg-green-600 text-white'
                           }`}>
                             {message.role === 'user' ? 'Y' : 'G'}
                           </div>
-                          <span className={`font-medium text-sm ${
+                          <span className={`font-medium text-xs md:text-sm ${
                             message.role === 'user' ? 'text-blue-300' : 'text-green-300'
                           }`}>
                             {message.role === 'user' ? 'You' : 'Gamani'}
                           </span>
-                          <span className="text-xs text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <span className="text-xs text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity hidden md:inline">
                             {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </span>
                         </div>
                         
                         {/* Message Content */}
-                        <div className={`rounded-2xl px-4 py-3 ${
+                        <div className={`rounded-2xl px-3 py-2.5 md:px-4 md:py-3 ${
                           message.role === 'user' 
                             ? 'bg-blue-600 text-white shadow-lg' 
                             : 'bg-gray-700 text-gray-100 shadow-lg border border-gray-600'
@@ -490,13 +562,14 @@ const DashboardPage = observer(() => {
                               {message.content}
                             </p>
                             {message.gameCode && (
-                              <div className="mt-3 px-3 py-2 bg-green-500/20 border border-green-500/30 rounded-lg">
+                              <div className="mt-2 md:mt-3 px-2.5 md:px-3 py-1.5 md:py-2 bg-green-500/20 border border-green-500/30 rounded-lg">
                                 <div className="flex items-center gap-2">
-                                  <span className="text-lg">🎮</span>
-                                  <span className="text-sm font-medium text-green-300">Game Generated</span>
+                                  <span className="text-base md:text-lg">🎮</span>
+                                  <span className="text-xs md:text-sm font-medium text-green-300">Game Generated</span>
                                 </div>
                                 <p className="text-xs text-green-200 mt-1 opacity-80">
-                                  Check the left panel to play your new game!
+                                  <span className="hidden md:inline">Check the left panel to play your new game!</span>
+                                  <span className="md:hidden">Tap Preview to play!</span>
                                 </p>
                               </div>
                             )}
@@ -564,7 +637,7 @@ const DashboardPage = observer(() => {
           </div>
           
           {/* Input area - Fixed at bottom */}
-          <div className="p-4 border-t border-gray-700 bg-gray-800">
+          <div className="p-3 md:p-4 border-t border-gray-700 bg-gray-800">
             <div className="max-w-4xl mx-auto">
               <div className="relative">
                 <textarea
@@ -580,22 +653,22 @@ const DashboardPage = observer(() => {
                       ? "Message Gamani... (try 'create a puzzle game' or 'what can you do?')"
                       : "Please select a project first to start chatting..."
                   }
-                  className="w-full p-4 pr-16 bg-gray-700 border border-gray-600 rounded-2xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400 shadow-lg"
-                  rows={gamePrompt.split('\n').length > 3 ? gamePrompt.split('\n').length : 3}
-                  style={{ maxHeight: '120px' }}
+                  className="w-full p-3 md:p-4 pr-12 md:pr-16 bg-gray-700 border border-gray-600 rounded-2xl resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-400 shadow-lg text-sm md:text-base"
+                  rows={gamePrompt.split('\n').length > 3 ? Math.min(gamePrompt.split('\n').length, 4) : 2}
+                  style={{ maxHeight: '100px' }}
                   disabled={isGenerating || !projectStore.currentProject}
                   maxLength={2000}
                 />
                 <button
                   onClick={handleConversation}
                   disabled={isGenerating || !gamePrompt.trim() || !projectStore.currentProject}
-                  className="absolute right-2 bottom-2 w-10 h-10 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-xl transition-all duration-200 flex items-center justify-center shadow-lg hover:shadow-xl disabled:opacity-50"
+                  className="absolute right-2 bottom-2 w-8 h-8 md:w-10 md:h-10 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-xl transition-all duration-200 flex items-center justify-center shadow-lg hover:shadow-xl disabled:opacity-50 touch-manipulation"
                   title={isGenerating ? 'Thinking...' : 'Send message'}
                 >
                   {isGenerating ? (
-                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <div className="w-4 h-4 md:w-5 md:h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                   ) : (
-                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 md:w-5 md:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                     </svg>
                   )}
@@ -603,7 +676,8 @@ const DashboardPage = observer(() => {
               </div>
               <div className="flex justify-between items-center mt-2 px-1">
                 <div className="text-xs text-gray-500">
-                  Press Enter to send, Shift+Enter for new line
+                  <span className="hidden sm:inline">Press Enter to send, Shift+Enter for new line</span>
+                  <span className="sm:hidden">Enter to send</span>
                 </div>
                 <div className="text-xs text-gray-500">
                   {gamePrompt.length}/2000
@@ -615,35 +689,63 @@ const DashboardPage = observer(() => {
       </div>
       
       {/* Mobile Game Preview Modal/Bottom Sheet */}
-      {generatedGame && (
-        <div className="md:hidden fixed inset-0 bg-black bg-opacity-50 z-50">
-          <div className="absolute bottom-0 left-0 right-0 bg-gray-900 rounded-t-lg max-h-[80vh] flex flex-col">
+      {(showGameModal || (activePanel === 'preview' && generatedGame)) && (
+        <div className="md:hidden fixed inset-0 bg-black bg-opacity-50 z-50 touch-manipulation">
+          <div className="absolute bottom-0 left-0 right-0 bg-gray-900 rounded-t-xl max-h-[85vh] flex flex-col shadow-2xl">
+            {/* Modal handle for swipe indication */}
+            <div className="w-12 h-1 bg-gray-600 rounded-full mx-auto mt-2 mb-2"></div>
+            
             <div className="p-4 border-b border-gray-700 flex justify-between items-center">
-              <h3 className="text-lg font-semibold">Your Game</h3>
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                🎮 Your Game
+              </h3>
               <div className="flex gap-2 items-center">
+                <button
+                  onClick={openGameFullScreen}
+                  className="px-3 py-2 text-sm bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors touch-manipulation"
+                  title="Open in new tab"
+                >
+                  <span className="text-lg">⛶</span>
+                </button>
                 <button
                   onClick={shareGame}
                   disabled={isSharing}
-                  className="px-3 py-1 text-sm bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded transition-colors"
+                  className="px-3 py-2 text-sm bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors touch-manipulation"
                 >
-                  {isSharing ? 'Sharing...' : 'Share'}
+                  {isSharing ? '📤...' : '📤 Share'}
                 </button>
                 <button
-                  onClick={() => setGeneratedGame('')}
-                  className="text-gray-400 hover:text-white"
+                  onClick={() => {
+                    setShowGameModal(false);
+                    setActivePanel('chat');
+                  }}
+                  className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors touch-manipulation"
                 >
                   ✕
                 </button>
               </div>
             </div>
-            <div className="flex-1 p-4">
-              <iframe
-                srcDoc={generatedGame}
-                className="w-full h-full border border-gray-600 rounded-lg bg-white"
-                sandbox="allow-scripts allow-same-origin"
-                title="Generated Game"
-              />
-            </div>
+            
+            {generatedGame ? (
+              <div className="flex-1 p-4 min-h-0">
+                <iframe
+                  srcDoc={generatedGame}
+                  className="w-full h-full border border-gray-600 rounded-lg bg-white"
+                  sandbox="allow-scripts allow-same-origin"
+                  title="Generated Game"
+                />
+              </div>
+            ) : (
+              <div className="flex-1 p-4 flex items-center justify-center">
+                <div className="text-center text-gray-400">
+                  <div className="w-16 h-16 bg-gray-700 rounded-lg mx-auto mb-4 flex items-center justify-center">
+                    <span className="text-2xl">🎮</span>
+                  </div>
+                  <p>No game generated yet</p>
+                  <p className="text-sm mt-2">Create a game in the chat to see it here!</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

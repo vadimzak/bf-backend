@@ -82,3 +82,31 @@
 .rtl {
   font-family: 'Segoe UI', 'Arial', 'Noto Sans Hebrew', 'David Libre', serif;
 }
+
+/* Custom Scrollbar Styles for Dark Theme */
+/* Webkit browsers (Chrome, Safari, Edge) */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--muted)); /* gray-700 equivalent */
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border)); /* gray-600 equivalent */
+  border-radius: 4px;
+  border: 1px solid hsl(var(--muted));
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--accent)); /* gray-500 equivalent for hover */
+}
+
+/* Firefox scrollbar styling */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) hsl(var(--muted));
+}
