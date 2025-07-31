@@ -1,4 +1,5 @@
-- Grafana + Loki + dashboards
+- fix gamani auth
+~ Grafana + Loki + dashboards
 - external DNS
 - add envs?
 - add versioning and report it from the server
@@ -9,6 +10,7 @@
 - ts-node -> tsx
 - upgrade AWS SDK
 - remove HTTP only mode
+- fix deploy script to not require force rollout
 
 - cleanup fallback flows deployment scripts
 - make sure all packages are latest version

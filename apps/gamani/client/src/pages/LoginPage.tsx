@@ -1,6 +1,6 @@
 import { observer } from 'mobx-react-lite';
 import { useStore } from '../stores';
-import { signInWithPopup, signInWithRedirect } from 'firebase/auth';
+import { signInWithPopup } from 'firebase/auth';
 import { auth, googleProvider } from '../config/firebase';
 import { Navigate } from 'react-router-dom';
 import { useEffect } from 'react';
@@ -9,11 +9,6 @@ const LoginPage = observer(() => {
   const { authStore } = useStore();
 
   console.log('🔧 [LOGIN] LoginPage rendering - authStore.isAuthenticated:', authStore.isAuthenticated);
-  console.log('🔧 [LOGIN] AuthStore state:', { 
-    user: authStore.user ? { email: authStore.user.email, uid: authStore.user.uid } : null,
-    loading: authStore.loading,
-    error: authStore.error
-  });
 
   // Clear error when navigating to login page
   useEffect(() => {
@@ -22,66 +17,31 @@ const LoginPage = observer(() => {
 
   const handleGoogleSignIn = async () => {
     console.log('🚀 [SIGNIN] Starting Google popup sign in');
-    console.log('🚀 [SIGNIN] Current URL:', window.location.href);
-    console.log('🚀 [SIGNIN] Firebase Auth config:', {
-      app: auth.app.name,
-      authDomain: auth.app.options.authDomain,
-      projectId: auth.app.options.projectId
-    });
     
     authStore.setLoading(true);
     authStore.setError(null);
     
     try {
-      console.log('🚀 [POPUP] Using popup authentication (works everywhere!)');
-      console.log('🚀 [POPUP] Google provider config:', {
-        providerId: googleProvider.providerId
-      });
-      
-      // Check if popups are blocked before attempting
-      const testPopup = window.open('', '_blank', 'width=1,height=1');
-      if (!testPopup || testPopup.closed) {
-        console.error('❌ [POPUP] Popup blocker detected');
-        authStore.setError('Popup blocker detected. Please allow popups for this site.');
-        authStore.setLoading(false);
-        return;
-      } else {
-        testPopup.close();
-        console.log('✅ [POPUP] Popup blocker check passed');
-      }
-      
-      console.log('🚀 [POPUP] About to call signInWithPopup...');
+      console.log('🚀 [POPUP] Attempting signInWithPopup...');
       const result = await signInWithPopup(auth, googleProvider);
       console.log('✅ [POPUP] Sign in successful:', result.user?.email);
-      console.log('✅ [POPUP] User UID:', result.user?.uid);
       
-      // The auth state listener in App.tsx will handle setting the user,
-      // but we can also set it directly for immediate UI update
-      authStore.setUser(result.user);
+      // The auth state listener will handle the rest
       
     } catch (error: any) {
-      console.error('❌ [POPUP] Popup sign in failed:', error);
+      console.error('❌ [POPUP] Sign in failed:', error);
       console.error('❌ [POPUP] Error code:', error.code);
       console.error('❌ [POPUP] Error message:', error.message);
-      console.error('❌ [POPUP] Error details:', {
-        name: error.name,
-        stack: error.stack?.substring(0, 200),
-        customData: error.customData
-      });
       
-      // Handle specific popup errors
-      if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/popup-blocked') {
-        console.log('🔄 [REDIRECT] Popup failed, trying redirect authentication...');
-        try {
-          await signInWithRedirect(auth, googleProvider);
-          // Don't set loading to false here - redirect will handle it
-          return;
-        } catch (redirectError: any) {
-          console.error('❌ [REDIRECT] Redirect sign in also failed:', redirectError);
-          authStore.setError('Both popup and redirect authentication failed. Please contact support.');
-        }
+      // Handle specific errors
+      if (error.code === 'auth/popup-closed-by-user') {
+        authStore.setError('Sign in was cancelled. Please try again.');
+      } else if (error.code === 'auth/popup-blocked') {
+        authStore.setError('Popup was blocked by your browser. Please allow popups and try again.');
       } else if (error.code === 'auth/unauthorized-domain') {
         authStore.setError('This domain is not authorized. Please contact support.');
+      } else if (error.code === 'auth/configuration-not-found') {
+        authStore.setError('Firebase configuration error. Please contact support.');
       } else {
         authStore.setError(`Failed to sign in: ${error.message}`);
       }

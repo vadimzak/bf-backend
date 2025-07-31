@@ -152,6 +152,10 @@ deploy_to_k8s() {
     # Apply manifests
     kubectl apply -k "$manifests_dir"
     
+    # Force rollout restart to ensure new image is pulled (especially important with :latest tags)
+    log_info "Forcing deployment restart to ensure latest image is used..."
+    kubectl rollout restart deployment/"$APP_NAME" -n apps
+    
     # Wait for rollout
     log_info "Waiting for deployment rollout..."
     if ! kubectl rollout status deployment/"$APP_NAME" -n apps --timeout=5m; then
