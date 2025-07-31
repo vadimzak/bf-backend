@@ -15,7 +15,6 @@ spec:
       labels:
         app: gamani
     spec:
-      serviceAccountName: gamani-service-account
       containers:
       - name: app
         image: 363397505860.dkr.ecr.il-central-1.amazonaws.com/gamani:latest
@@ -28,36 +27,14 @@ spec:
           value: production
         - name: PORT
           value: "3002"
-        - name: AWS_REGION
-          value: "il-central-1"
-        - name: AWS_DEFAULT_REGION
-          value: "il-central-1"
-        - name: AWS_SDK_LOAD_CONFIG
-          value: "1"
-        - name: AWS_EC2_METADATA_DISABLED
-          value: "false"
-        - name: AWS_METADATA_SERVICE_TIMEOUT
-          value: "10"
-        - name: AWS_METADATA_SERVICE_NUM_ATTEMPTS
-          value: "3"
-        - name: DYNAMODB_TABLE_NAME
-          value: "gamani-items"
-        - name: DYNAMODB_PROJECTS_TABLE
-          value: "gamani-projects"
-        - name: DYNAMODB_MESSAGES_TABLE
-          value: "gamani-messages"
-        - name: AWS_ROLE_ARN
-          value: "arn:aws:iam::363397505860:role/gamani-app-role"
-        - name: AWS_WEB_IDENTITY_TOKEN_FILE
-          value: "/var/run/secrets/kubernetes.io/serviceaccount/token"
         - name: APP_VERSION
-          value: "1.0.0"
+          value: "1.0.4"
         - name: APP_GIT_COMMIT
-          value: "unknown"
+          value: "abe37a5"
         - name: APP_BUILD_TIME
-          value: "unknown"
+          value: "2025-07-31T16:32:01Z"
         - name: APP_DEPLOYED_BY
-          value: "unknown"
+          value: "vadimzak"
         livenessProbe:
           httpGet:
             path: /health
@@ -76,8 +53,8 @@ spec:
           failureThreshold: 3
         resources:
           requests:
-            memory: "256Mi"
-            cpu: "200m"
+            memory: "128Mi"
+            cpu: "100m"
           limits:
-            memory: "512Mi"
-            cpu: "1000m"
+            memory: "256Mi"
+            cpu: "500m"

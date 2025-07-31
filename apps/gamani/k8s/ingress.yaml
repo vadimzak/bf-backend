@@ -1,14 +1,14 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: gamani-ingress
+  name: gamani
   namespace: apps
   annotations:
-    kubernetes.io/ingress.class: nginx
-    nginx.ingress.kubernetes.io/rewrite-target: /
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
     cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
 spec:
+  ingressClassName: nginx
   tls:
   - hosts:
     - gamani.vadimzak.com
@@ -21,6 +21,6 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: gamani-service
+            name: gamani
             port:
               number: 80
