@@ -586,3 +586,5 @@ When migrating from Docker Compose:
 - TypeScript - use types instead of interfaces
 - don't prematurely put in ENV vars values that do not have different values
 - check TS errors before completing or deploying
+- prefer to fail the server init if something is wrong (missing permissions / service fails to init)
+- do not deploy to prod without my permission

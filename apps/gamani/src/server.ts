@@ -19,6 +19,12 @@ import { GoogleGenAI } from '@google/genai';
 
 dotenv.config();
 
+// Utility function for timestamped logging
+const timestamp = () => new Date().toISOString();
+const log = (level: string, message: string, ...args: any[]) => {
+  console.log(`[${timestamp()}] ${level} ${message}`, ...args);
+};
+
 // Types
 interface AuthenticatedRequest extends Request {
   user?: {
@@ -62,16 +68,16 @@ const PORT = process.env.PORT || 3002;
 const awsRegion = process.env.AWS_REGION || 'il-central-1';
 
 // AWS SDK v3 automatically picks up IRSA credentials when environment variables are present
-console.log('🔧 [AWS] Initializing AWS SDK v3 clients');
-console.log('🔧 [AWS] Region:', awsRegion);
+log('🔧 [AWS]', 'Initializing AWS SDK v3 clients');
+log('🔧 [AWS]', 'Region:', awsRegion);
 
 if (process.env.NODE_ENV !== 'production') {
-  console.log('🔧 [AWS] Development mode - using environment credentials');
+  log('🔧 [AWS]', 'Development mode - using environment credentials');
 } else {
-  console.log('🔧 [AWS] Production mode - using IRSA credentials');
+  log('🔧 [AWS]', 'Production mode - using IRSA credentials');
   if (process.env.AWS_ROLE_ARN && process.env.AWS_WEB_IDENTITY_TOKEN_FILE) {
-    console.log('✅ [AWS] IRSA environment variables detected');
-    console.log('🔧 [AWS] Role ARN:', process.env.AWS_ROLE_ARN);
+    log('✅ [AWS]', 'IRSA environment variables detected');
+    log('🔧 [AWS]', 'Role ARN:', process.env.AWS_ROLE_ARN);
   }
 }
 
@@ -79,7 +85,7 @@ if (process.env.NODE_ENV !== 'production') {
 const dynamoClient = new DynamoDBClient({ region: awsRegion });
 const secretsManagerClient = new SecretsManagerClient({ region: awsRegion });
 
-console.log('✅ [AWS] SDK v3 clients initialized');
+log('✅ [AWS]', 'SDK v3 clients initialized');
 
 // Initialize Cognito JWT Verifier
 const jwtVerifier = CognitoJwtVerifier.create({
@@ -88,7 +94,7 @@ const jwtVerifier = CognitoJwtVerifier.create({
   clientId: '1qa3m3ok5i8ehg0ef8jg3fnff6',
 });
 
-console.log('✅ Cognito JWT Verifier initialized');
+log('✅ [COGNITO]', 'JWT Verifier initialized');
 
 // Initialize DynamoDB Document Client (AWS SDK v3)
 const dynamodb = DynamoDBDocumentClient.from(dynamoClient, {
@@ -106,9 +112,9 @@ const dynamodb = DynamoDBDocumentClient.from(dynamoClient, {
 let genAI: GoogleGenAI;
 
 // Function to initialize Google AI with API key from Secrets Manager
-async function initializeGoogleAI() {
+async function initializeGoogleAI(): Promise<void> {
   try {
-    console.log('🔐 [GOOGLE AI] Fetching API key from Secrets Manager...');
+    log('🔐 [GOOGLE AI]', 'Fetching API key from Secrets Manager...');
     const command = new GetSecretValueCommand({
       SecretId: 'gamani/google-ai-api-key'
     });
@@ -116,22 +122,56 @@ async function initializeGoogleAI() {
     
     const apiKey = result.SecretString;
     if (!apiKey || apiKey === 'PLACEHOLDER_KEY_NEEDS_UPDATE') {
-      console.warn('⚠️ [GOOGLE AI] API key is placeholder or missing. Game generation will not work.');
-      return;
+      throw new Error('Google AI API key is missing or placeholder. Game generation cannot function without valid API key.');
     }
     
     genAI = new GoogleGenAI({
       apiKey: apiKey
     });
-    console.log('✅ [GOOGLE AI] Initialized successfully');
+    log('✅ [GOOGLE AI]', 'Initialized successfully');
   } catch (error) {
-    console.error('❌ [GOOGLE AI] Failed to fetch API key from Secrets Manager:', error);
-    console.warn('⚠️ [GOOGLE AI] Game generation will not work without API key');
+    log('❌ [GOOGLE AI]', 'Failed to initialize Google AI service:', error);
+    throw error; // Re-throw to fail server startup
   }
 }
 
-// Initialize Google AI on startup
-initializeGoogleAI();
+// Function to validate AWS connectivity
+async function validateAWSServices(): Promise<void> {
+  try {
+    log('🔄 [AWS]', 'Validating AWS service connectivity...');
+    
+    // Test DynamoDB connectivity by listing tables (or checking one specific table)
+    const listTablesCommand = new ScanCommand({
+      TableName: process.env.DYNAMODB_TABLE_NAME || 'gamani-items',
+      Limit: 1 // Just test connectivity, don't fetch data
+    });
+    await dynamodb.send(listTablesCommand);
+    
+    log('✅ [AWS]', 'DynamoDB connectivity validated');
+  } catch (error) {
+    log('❌ [AWS]', 'Failed to validate AWS services:', error);
+    throw new Error(`AWS services validation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+// Function to initialize all critical services
+async function initializeCriticalServices(): Promise<void> {
+  log('🔄 [STARTUP]', 'Initializing critical services...');
+  
+  try {
+    // Validate AWS services connectivity
+    await validateAWSServices();
+    
+    // Initialize Google AI (critical for core functionality)
+    await initializeGoogleAI();
+    
+    log('✅ [STARTUP]', 'All critical services initialized successfully');
+  } catch (error) {
+    log('❌ [STARTUP]', 'Critical service initialization failed:', error);
+    log('💥 [STARTUP]', 'Server startup aborted due to service initialization failure');
+    process.exit(1); // Fail fast - exit the process
+  }
+}
 
 // Middleware - Disable CSP completely to allow Firebase auth
 app.use(helmet({
@@ -151,38 +191,36 @@ app.use(express.static(path.join(__dirname, '..', '..', '..', '..', 'client', 'd
 
 // Request logging middleware
 app.use((req: Request, res: Response, next: NextFunction) => {
-  const timestamp = new Date().toISOString();
-  console.log(`📡 [SERVER REQUEST] ${timestamp} - ${req.method} ${req.path}`);
+  log('📡 [SERVER REQUEST]', `${req.method} ${req.path}`);
   if (req.headers.authorization) {
-    console.log(`📡 [SERVER REQUEST] Has authorization header: ${req.headers.authorization.substring(0, 20)}...`);
+    log('📡 [SERVER REQUEST]', `Has authorization header: ${req.headers.authorization.substring(0, 20)}...`);
   }
   next();
 });
 
 // Cognito Auth middleware
 const authenticateCognito = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
-  const timestamp = new Date().toISOString();
-  console.log(`🔐 [SERVER AUTH] ${timestamp} - Cognito authentication attempt for ${req.method} ${req.path}`);
+  log('🔐 [SERVER AUTH]', `Cognito authentication attempt for ${req.method} ${req.path}`);
   
   try {
     const authHeader = req.headers.authorization;
-    console.log('🔐 [SERVER AUTH] Authorization header present:', !!authHeader);
-    console.log('🔐 [SERVER AUTH] Authorization header starts with Bearer:', authHeader?.startsWith('Bearer ') || false);
+    log('🔐 [SERVER AUTH]', 'Authorization header present:', !!authHeader);
+    log('🔐 [SERVER AUTH]', 'Authorization header starts with Bearer:', authHeader?.startsWith('Bearer ') || false);
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.log('❌ [SERVER AUTH] No valid authorization header');
+      log('❌ [SERVER AUTH]', 'No valid authorization header');
       res.status(401).json({ error: 'No valid authorization header' });
       return;
     }
 
     const accessToken = authHeader.split('Bearer ')[1];
-    console.log('🔐 [SERVER AUTH] Access Token length:', accessToken.length);
-    console.log('🔐 [SERVER AUTH] Access Token preview:', accessToken.substring(0, 20) + '...');
+    log('🔐 [SERVER AUTH]', 'Access Token length:', accessToken.length);
+    log('🔐 [SERVER AUTH]', 'Access Token preview:', accessToken.substring(0, 20) + '...');
     
-    console.log('🔐 [SERVER AUTH] Verifying token with Cognito...');
+    log('🔐 [SERVER AUTH]', 'Verifying token with Cognito...');
     const payload = await jwtVerifier.verify(accessToken);
-    console.log('✅ [SERVER AUTH] Token verification successful');
-    console.log('✅ [SERVER AUTH] User details:', { 
+    log('✅ [SERVER AUTH]', 'Token verification successful');
+    log('✅ [SERVER AUTH]', 'User details:', { 
       sub: payload.sub, 
       username: payload.username,
       client_id: payload.client_id 
@@ -197,8 +235,8 @@ const authenticateCognito = async (req: AuthenticatedRequest, res: Response, nex
     };
     next();
   } catch (error: any) {
-    console.error('❌ [SERVER AUTH] Cognito auth error:', error);
-    console.error('❌ [SERVER AUTH] Error details:', {
+    log('❌ [SERVER AUTH]', 'Cognito auth error:', error);
+    log('❌ [SERVER AUTH]', 'Error details:', {
       name: error.name,
       message: error.message,
       code: error.code || 'unknown'
@@ -234,14 +272,14 @@ app.get('/health', (req: Request, res: Response) => {
 
 // Auth routes
 app.post('/api/auth/verify', authenticateCognito, (req: AuthenticatedRequest, res: Response) => {
-  console.log('✅ [SERVER AUTH] /api/auth/verify - User authenticated successfully');
+  log('✅ [SERVER AUTH]', '/api/auth/verify - User authenticated successfully');
   const userData = {
     sub: req.user?.sub,
     username: req.user?.username,
     email: req.user?.email,
     email_verified: req.user?.email_verified
   };
-  console.log('✅ [SERVER AUTH] Returning user data:', userData);
+  log('✅ [SERVER AUTH]', 'Returning user data:', userData);
   res.json(createApiResponse(userData, 'User authenticated successfully'));
 });
 
@@ -250,9 +288,9 @@ app.use('/api/protected', authenticateCognito);
 
 // DynamoDB routes
 app.get('/api/protected/items', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  console.log('🔍 [ITEMS API] GET /api/protected/items - Starting');
-  console.log('🔍 [ITEMS API] User sub:', req.user?.sub);
-  console.log('🔍 [ITEMS API] Table name:', process.env.DYNAMODB_TABLE_NAME || 'gamani-items');
+  log('🔍 [ITEMS API]', 'GET /api/protected/items - Starting');
+  log('🔍 [ITEMS API]', 'User sub:', req.user?.sub);
+  log('🔍 [ITEMS API]', 'Table name:', process.env.DYNAMODB_TABLE_NAME || 'gamani-items');
   
   try {
     const params = {
@@ -263,21 +301,21 @@ app.get('/api/protected/items', async (req: AuthenticatedRequest, res: Response)
       }
     };
 
-    console.log('🔍 [ITEMS API] DynamoDB params:', JSON.stringify(params, null, 2));
-    console.log('🔍 [ITEMS API] About to call dynamodb.scan()...');
+    log('🔍 [ITEMS API]', 'DynamoDB params:', JSON.stringify(params, null, 2));
+    log('🔍 [ITEMS API]', 'About to call dynamodb.scan()...');
     
     const command = new ScanCommand(params);
     const result = await dynamodb.send(command);
     
-    console.log('✅ [ITEMS API] DynamoDB scan completed successfully');
-    console.log('✅ [ITEMS API] Result:', JSON.stringify(result, null, 2));
+    log('✅ [ITEMS API]', 'DynamoDB scan completed successfully');
+    log('✅ [ITEMS API]', 'Result:', JSON.stringify(result, null, 2));
     
     res.json(createApiResponse({ items: result.Items }, 'Items retrieved successfully'));
-    console.log('✅ [ITEMS API] Response sent successfully');
+    log('✅ [ITEMS API]', 'Response sent successfully');
   } catch (error) {
-    console.error('❌ [ITEMS API] DynamoDB error:', error);
+    log('❌ [ITEMS API]', 'DynamoDB error:', error);
     res.status(500).json(createErrorResponse('Failed to fetch items'));
-    console.log('❌ [ITEMS API] Error response sent');
+    log('❌ [ITEMS API]', 'Error response sent');
   }
 });
 
@@ -302,15 +340,15 @@ app.post('/api/protected/items', async (req: AuthenticatedRequest, res: Response
     await dynamodb.send(putCommand);
     res.json(createApiResponse({ item }, 'Item created successfully'));
   } catch (error) {
-    console.error('DynamoDB error:', error);
+    log('❌ [ITEMS API]', 'DynamoDB error (create):', error);
     res.status(500).json(createErrorResponse('Failed to create item'));
   }
 });
 
 // Project management routes
 app.get('/api/protected/projects', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  console.log('🔍 [PROJECTS API] GET /api/protected/projects - Starting');
-  console.log('🔍 [PROJECTS API] User sub:', req.user?.sub);
+  log('🔍 [PROJECTS API]', 'GET /api/protected/projects - Starting');
+  log('🔍 [PROJECTS API]', 'User sub:', req.user?.sub);
   
   try {
     const params = {
@@ -321,23 +359,23 @@ app.get('/api/protected/projects', async (req: AuthenticatedRequest, res: Respon
       }
     };
 
-    console.log('🔍 [PROJECTS API] DynamoDB params:', JSON.stringify(params, null, 2));
+    log('🔍 [PROJECTS API]', 'DynamoDB params:', JSON.stringify(params, null, 2));
     
     const command = new ScanCommand(params);
     const result = await dynamodb.send(command);
     
-    console.log('✅ [PROJECTS API] DynamoDB scan completed successfully');
-    console.log('✅ [PROJECTS API] Result:', JSON.stringify(result, null, 2));
+    log('✅ [PROJECTS API]', 'DynamoDB scan completed successfully');
+    log('✅ [PROJECTS API]', 'Result:', JSON.stringify(result, null, 2));
     
     res.json(createApiResponse({ projects: result.Items }, 'Projects retrieved successfully'));
   } catch (error) {
-    console.error('❌ [PROJECTS API] DynamoDB error:', error);
+    log('❌ [PROJECTS API]', 'DynamoDB error:', error);
     res.status(500).json(createErrorResponse('Failed to fetch projects'));
   }
 });
 
 app.post('/api/protected/projects', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  console.log('📝 [PROJECTS API] POST /api/protected/projects - Starting');
+  log('📝 [PROJECTS API]', 'POST /api/protected/projects - Starting');
   
   try {
     const { name, description }: CreateProjectRequest = req.body;
@@ -361,21 +399,21 @@ app.post('/api/protected/projects', async (req: AuthenticatedRequest, res: Respo
       Item: project
     };
 
-    console.log('📝 [PROJECTS API] Creating project:', JSON.stringify(project, null, 2));
+    log('📝 [PROJECTS API]', 'Creating project:', JSON.stringify(project, null, 2));
     
     const putCommand = new PutCommand(params);
     await dynamodb.send(putCommand);
     
-    console.log('✅ [PROJECTS API] Project created successfully');
+    log('✅ [PROJECTS API]', 'Project created successfully');
     res.json(createApiResponse({ project }, 'Project created successfully'));
   } catch (error) {
-    console.error('❌ [PROJECTS API] Error creating project:', error);
+    log('❌ [PROJECTS API]', 'Error creating project:', error);
     res.status(500).json(createErrorResponse('Failed to create project'));
   }
 });
 
 app.put('/api/protected/projects/:id', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  console.log('📝 [PROJECTS API] PUT /api/protected/projects/:id - Starting');
+  log('📝 [PROJECTS API]', 'PUT /api/protected/projects/:id - Starting');
   
   try {
     const { id } = req.params;
@@ -432,21 +470,21 @@ app.put('/api/protected/projects/:id', async (req: AuthenticatedRequest, res: Re
       ReturnValues: 'ALL_NEW' as const
     };
 
-    console.log('📝 [PROJECTS API] Updating project:', JSON.stringify(updateParams, null, 2));
+    log('📝 [PROJECTS API]', 'Updating project:', JSON.stringify(updateParams, null, 2));
     
     const updateCommand = new UpdateCommand(updateParams);
     const result = await dynamodb.send(updateCommand);
     
-    console.log('✅ [PROJECTS API] Project updated successfully');
+    log('✅ [PROJECTS API]', 'Project updated successfully');
     res.json(createApiResponse({ project: result.Attributes }, 'Project updated successfully'));
   } catch (error) {
-    console.error('❌ [PROJECTS API] Error updating project:', error);
+    log('❌ [PROJECTS API]', 'Error updating project:', error);
     res.status(500).json(createErrorResponse('Failed to update project'));
   }
 });
 
 app.delete('/api/protected/projects/:id', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  console.log('🗑️ [PROJECTS API] DELETE /api/protected/projects/:id - Starting');
+  log('🗑️ [PROJECTS API]', 'DELETE /api/protected/projects/:id - Starting');
   
   try {
     const { id } = req.params;
@@ -480,22 +518,22 @@ app.delete('/api/protected/projects/:id', async (req: AuthenticatedRequest, res:
       Key: { id }
     };
 
-    console.log('🗑️ [PROJECTS API] Deleting project:', id);
+    log('🗑️ [PROJECTS API]', 'Deleting project:', id);
     
     const deleteCommand = new DeleteCommand(deleteParams);
     await dynamodb.send(deleteCommand);
     
-    console.log('✅ [PROJECTS API] Project deleted successfully');
+    log('✅ [PROJECTS API]', 'Project deleted successfully');
     res.json(createApiResponse({}, 'Project deleted successfully'));
   } catch (error) {
-    console.error('❌ [PROJECTS API] Error deleting project:', error);
+    log('❌ [PROJECTS API]', 'Error deleting project:', error);
     res.status(500).json(createErrorResponse('Failed to delete project'));
   }
 });
 
 // Chat history routes
 app.get('/api/protected/projects/:id/messages', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  console.log('💬 [CHAT API] GET /api/protected/projects/:id/messages - Starting');
+  log('💬 [CHAT API]', 'GET /api/protected/projects/:id/messages - Starting');
   
   try {
     const { id: projectId } = req.params;
@@ -533,7 +571,7 @@ app.get('/api/protected/projects/:id/messages', async (req: AuthenticatedRequest
       }
     };
 
-    console.log('💬 [CHAT API] Fetching messages for project:', projectId);
+    log('💬 [CHAT API]', 'Fetching messages for project:', projectId);
     
     const command = new ScanCommand(params);
     const result = await dynamodb.send(command);
@@ -543,16 +581,16 @@ app.get('/api/protected/projects/:id/messages', async (req: AuthenticatedRequest
       new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
     );
     
-    console.log('✅ [CHAT API] Messages retrieved successfully, count:', messages.length);
+    log('✅ [CHAT API]', 'Messages retrieved successfully, count:', messages.length);
     res.json(createApiResponse({ messages }, 'Messages retrieved successfully'));
   } catch (error) {
-    console.error('❌ [CHAT API] Error fetching messages:', error);
+    log('❌ [CHAT API]', 'Error fetching messages:', error);
     res.status(500).json(createErrorResponse('Failed to fetch messages'));
   }
 });
 
 app.post('/api/protected/projects/:id/messages', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  console.log('💬 [CHAT API] POST /api/protected/projects/:id/messages - Starting');
+  log('💬 [CHAT API]', 'POST /api/protected/projects/:id/messages - Starting');
   
   try {
     const { id: projectId } = req.params;
@@ -607,21 +645,21 @@ app.post('/api/protected/projects/:id/messages', async (req: AuthenticatedReques
       Item: message
     };
 
-    console.log('💬 [CHAT API] Saving message:', JSON.stringify(message, null, 2));
+    log('💬 [CHAT API]', 'Saving message:', JSON.stringify(message, null, 2));
     
     const putCommand = new PutCommand(params);
     await dynamodb.send(putCommand);
     
-    console.log('✅ [CHAT API] Message saved successfully');
+    log('✅ [CHAT API]', 'Message saved successfully');
     res.json(createApiResponse({ message }, 'Message saved successfully'));
   } catch (error) {
-    console.error('❌ [CHAT API] Error saving message:', error);
+    log('❌ [CHAT API]', 'Error saving message:', error);
     res.status(500).json(createErrorResponse('Failed to save message'));
   }
 });
 
 app.delete('/api/protected/projects/:id/messages', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  console.log('💬 [CHAT API] DELETE /api/protected/projects/:id/messages - Starting');
+  log('💬 [CHAT API]', 'DELETE /api/protected/projects/:id/messages - Starting');
   
   try {
     const { id: projectId } = req.params;
@@ -663,7 +701,7 @@ app.delete('/api/protected/projects/:id/messages', async (req: AuthenticatedRequ
     const scanResult = await dynamodb.send(scanCommand);
     const messages = scanResult.Items || [];
 
-    console.log('💬 [CHAT API] Found', messages.length, 'messages to delete for project:', projectId);
+    log('💬 [CHAT API]', 'Found', messages.length, 'messages to delete for project:', projectId);
 
     // Delete each message individually (DynamoDB doesn't support batch delete with filter)
     const deletePromises = messages.map(message => {
@@ -677,10 +715,10 @@ app.delete('/api/protected/projects/:id/messages', async (req: AuthenticatedRequ
 
     await Promise.all(deletePromises);
     
-    console.log('✅ [CHAT API] All messages deleted successfully');
+    log('✅ [CHAT API]', 'All messages deleted successfully');
     res.json(createApiResponse({ deletedCount: messages.length }, 'Messages cleared successfully'));
   } catch (error) {
-    console.error('❌ [CHAT API] Error clearing messages:', error);
+    log('❌ [CHAT API]', 'Error clearing messages:', error);
     res.status(500).json(createErrorResponse('Failed to clear messages'));
   }
 });
@@ -696,8 +734,8 @@ app.post('/api/protected/ai/generate', async (req: AuthenticatedRequest, res: Re
     }
 
     if (!genAI) {
-      console.error('❌ [GOOGLE AI] AI service not initialized');
-      res.status(503).json(createErrorResponse('AI service not available. Please check server configuration.'));
+      log('❌ [GOOGLE AI]', 'AI service not initialized - this should not happen with fail-fast startup');
+      res.status(503).json(createErrorResponse('AI service not available. Server may be starting up.'));
       return;
     }
 
@@ -728,7 +766,7 @@ Return ONLY the complete HTML code, starting with <!DOCTYPE html> and ending wit
 
     res.json(createApiResponse({ response: text }, 'AI response generated successfully'));
   } catch (error) {
-    console.error('Google AI error:', error);
+    log('❌ [GOOGLE AI]', 'Google AI error:', error);
     res.status(500).json(createErrorResponse('Failed to generate AI response'));
   }
 });
@@ -772,7 +810,7 @@ app.post('/api/protected/games/share', authenticateCognito, async (req: Authenti
       shareUrl: `${req.protocol}://${req.get('host')}/shared/${shareId}`
     }, 'Game shared successfully'));
   } catch (error) {
-    console.error('Share game error:', error);
+    log('❌ [SHARING]', 'Share game error:', error);
     res.status(500).json(createErrorResponse('Failed to share game'));
   }
 });
@@ -816,7 +854,7 @@ app.get('/api/games/:shareId', async (req: Request, res: Response) => {
 
     res.json(createApiResponse(gameData, 'Shared game retrieved successfully'));
   } catch (error) {
-    console.error('Get shared game error:', error);
+    log('❌ [SHARING]', 'Get shared game error:', error);
     res.status(500).json(createErrorResponse('Failed to retrieve shared game'));
   }
 });
@@ -845,7 +883,7 @@ app.get('/api/protected/games/shared', authenticateCognito, async (req: Authenti
 
     res.json(createApiResponse(sharedGames, 'Shared games retrieved successfully'));
   } catch (error) {
-    console.error('Get shared games error:', error);
+    log('❌ [SHARING]', 'Get shared games error:', error);
     res.status(500).json(createErrorResponse('Failed to retrieve shared games'));
   }
 });
@@ -882,7 +920,7 @@ app.delete('/api/protected/games/:shareId', authenticateCognito, async (req: Aut
 
     res.json(createApiResponse({}, 'Shared game deleted successfully'));
   } catch (error) {
-    console.error('Delete shared game error:', error);
+    log('❌ [SHARING]', 'Delete shared game error:', error);
     res.status(500).json(createErrorResponse('Failed to delete shared game'));
   }
 });
@@ -894,13 +932,27 @@ app.get('*', (req: Request, res: Response) => {
 
 // Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
-  console.error(err.stack);
+  log('❌ [ERROR]', 'Unhandled error:', err.stack);
   res.status(500).json({ error: 'Something went wrong!' });
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`Gamani app listening on port ${PORT}`);
-  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`Cognito JWT Verifier initialized: Yes`);
-});
+// Start server only after all critical services are initialized
+async function startServer(): Promise<void> {
+  try {
+    // Initialize all critical services first
+    await initializeCriticalServices();
+    
+    // Only start the HTTP server if all services initialized successfully
+    app.listen(PORT, () => {
+      log('🚀 [SERVER]', `Gamani app listening on port ${PORT}`);
+      log('🚀 [SERVER]', `Environment: ${process.env.NODE_ENV || 'development'}`);
+      log('🚀 [SERVER]', `All services initialized successfully`);
+    });
+  } catch (error) {
+    log('💥 [SERVER]', 'Failed to start server due to initialization errors');
+    process.exit(1);
+  }
+}
+
+// Start the server
+startServer();
