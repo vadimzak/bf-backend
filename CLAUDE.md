@@ -74,18 +74,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Quick Setup
 ```bash
-# Complete setup with HTTPS on port 443 (default)
+# Complete setup with HTTPS on port 443 and monitoring (default)
 ./scripts/k8s/quick-start-full.sh
 
 # Complete setup without secondary IP (HTTPS only on port 30443)
 ./scripts/k8s/quick-start-full.sh --no-secondary-ip
 
-# Basic setup (ports 30080/30443)
+# Complete setup without monitoring stack
+./scripts/k8s/quick-start-full.sh --skip-monitoring
+
+# Basic setup (ports 30080/30443, no monitoring)
 ./scripts/k8s/quick-start.sh
 ```
 
-**Note**: Secondary IP is now ENABLED BY DEFAULT for HTTPS on port 443.
-If you want to save ~$3.60/month and use port 30443 for HTTPS, add `--no-secondary-ip`
+**Note**: Secondary IP and monitoring stack are now ENABLED BY DEFAULT.
+- Secondary IP costs ~$3.60/month but enables HTTPS on port 443
+- Monitoring provides Grafana dashboards and Prometheus metrics
+- Use `--no-secondary-ip` and `--skip-monitoring` flags to disable if needed
 
 ### Application Deployment
 ```bash
@@ -172,7 +177,18 @@ If you want to save ~$3.60/month and use port 30443 for HTTPS, add `--no-seconda
 - **Loki**: http://localhost:3100 (log queries)
 - **AlertManager**: http://localhost:9093 (alert management)
 
+**Access**: Grafana uses anonymous authentication by default - no login required.
+
+**Pre-configured Dashboards**: 20+ Kubernetes monitoring dashboards including:
+- Cluster resource monitoring (CPU, Memory, Storage)
+- Node and pod metrics
+- Networking dashboards
+- AlertManager overview
+- CoreDNS monitoring
+
 **Note**: All monitoring services are internal-only (ClusterIP) for security. Access via port forwarding only.
+
+**Troubleshooting**: If Grafana shows login page or appears empty, see `docs/GRAFANA_AUTH_TROUBLESHOOTING.md`
 
 ## Secondary IP Solution for HTTPS
 

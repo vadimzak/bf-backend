@@ -148,6 +148,9 @@ install_monitoring() {
         --set grafana.auth.anonymous.enabled=true \
         --set grafana.auth.anonymous.org_role="Admin" \
         --set grafana.auth.disable_login_form=true \
+        --set grafana.env.GF_AUTH_ANONYMOUS_ENABLED=true \
+        --set grafana.env.GF_AUTH_ANONYMOUS_ORG_ROLE=Admin \
+        --set grafana.env.GF_AUTH_DISABLE_LOGIN_FORM=true \
         --set prometheus.service.type="ClusterIP" \
         --set prometheus.service.port=9090 \
         --set alertmanager.service.type="ClusterIP" \
@@ -222,6 +225,22 @@ EOF
     
     # Wait for Grafana to restart
     kubectl rollout status deployment -n "$NAMESPACE" "$KUBE_PROMETHEUS_RELEASE-grafana" --timeout=300s
+    
+    # Validate Grafana authentication configuration
+    log_info "Validating Grafana authentication configuration..."
+    GRAFANA_AUTH_CHECK=$(kubectl exec -n "$NAMESPACE" deployment/"$KUBE_PROMETHEUS_RELEASE-grafana" -- env | grep -E "GF_AUTH_ANONYMOUS_ENABLED|GF_AUTH_ANONYMOUS_ORG_ROLE|GF_AUTH_DISABLE_LOGIN_FORM" | wc -l)
+    
+    if [[ "$GRAFANA_AUTH_CHECK" -eq 3 ]]; then
+        log_info "✓ Grafana anonymous authentication properly configured"
+    else
+        log_warning "⚠ Grafana authentication may not be properly configured"
+        log_warning "Run the following command to fix:"
+        log_warning "helm upgrade $KUBE_PROMETHEUS_RELEASE prometheus-community/kube-prometheus-stack -n $NAMESPACE \\"
+        log_warning "  --set grafana.env.GF_AUTH_ANONYMOUS_ENABLED=true \\"
+        log_warning "  --set grafana.env.GF_AUTH_ANONYMOUS_ORG_ROLE=Admin \\"
+        log_warning "  --set grafana.env.GF_AUTH_DISABLE_LOGIN_FORM=true \\"
+        log_warning "  --reuse-values"
+    fi
     
     log_info "Monitoring stack installed successfully!"
     echo
