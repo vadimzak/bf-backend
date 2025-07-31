@@ -59,6 +59,11 @@ interface CreateMessageRequest {
 
 interface AIGenerateRequest {
   prompt: string;
+  conversation?: Array<{
+    role: 'user' | 'assistant';
+    content: string;
+  }>;
+  currentGame?: string;
 }
 
 const app = express();
@@ -731,7 +736,7 @@ app.delete('/api/protected/projects/:id/messages', async (req: AuthenticatedRequ
 // AI routes using Google Generative AI
 app.post('/api/protected/ai/generate', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
-    const { prompt }: AIGenerateRequest = req.body;
+    const { prompt, conversation, currentGame }: AIGenerateRequest = req.body;
     
     if (!prompt) {
       res.status(400).json({ error: 'Prompt is required' });
@@ -744,10 +749,35 @@ app.post('/api/protected/ai/generate', async (req: AuthenticatedRequest, res: Re
       return;
     }
 
-    // Enhanced prompt for game development
-    const gamePrompt = `You are a children's game developer. Create a complete, fun, interactive game in Hebrew based on this request: "${prompt}"
+    // Build conversation context for AI
+    let contextualPrompt = '';
+    
+    // If there's a conversation history, include it for context
+    if (conversation && conversation.length > 0) {
+      contextualPrompt += 'Previous conversation context:\n';
+      conversation.forEach((msg, index) => {
+        // Only include the last 10 messages to avoid token limits
+        if (index >= conversation.length - 10) {
+          contextualPrompt += `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}\n`;
+        }
+      });
+      contextualPrompt += '\n';
+    }
+
+    // If there's a current game, include it for context
+    if (currentGame) {
+      contextualPrompt += 'Current game code for reference/modification:\n';
+      contextualPrompt += `${currentGame}\n\n`;
+    }
+
+    // Enhanced prompt for game development with conversation context
+    const gamePrompt = `You are a children's game developer assistant. You maintain context across conversations and can modify existing games based on user requests.
+
+${contextualPrompt}Current user request: "${prompt}"
 
 Instructions:
+- If this is a modification request and you have previous game code, modify the existing game accordingly
+- If this is a new game request, create a complete, fun, interactive game in Hebrew
 - Create a complete HTML page with embedded CSS and JavaScript
 - The game should be child-friendly and fun
 - Use Hebrew text for all UI elements and instructions
@@ -756,8 +786,11 @@ Instructions:
 - Use bright colors and appealing visuals
 - Ensure the game works on both desktop and mobile
 - The HTML should be complete and ready to display in an iframe
+- If the user asks about something other than game creation/modification, respond conversationally but try to steer back to game development
 
-Return ONLY the complete HTML code, starting with <!DOCTYPE html> and ending with </html>. Do not include any explanations or markdown formatting.`;
+If you're creating/modifying a game, return ONLY the complete HTML code, starting with <!DOCTYPE html> and ending with </html>. Do not include any explanations or markdown formatting.
+
+If you're having a conversation, respond naturally in Hebrew or English based on the user's language.`;
 
     const result = await genAI.models.generateContent({
       model: 'gemini-2.0-flash-exp',
@@ -767,7 +800,14 @@ Return ONLY the complete HTML code, starting with <!DOCTYPE html> and ending wit
       }]
     });
     
-    const text = result.text;
+    const text = result.text || '';
+
+    log('✅ [GOOGLE AI]', 'Generated response with conversation context:', {
+      promptLength: prompt.length,
+      conversationLength: conversation?.length || 0,
+      hasCurrentGame: !!currentGame,
+      responseLength: text.length
+    });
 
     res.json(createApiResponse({ response: text }, 'AI response generated successfully'));
   } catch (error) {

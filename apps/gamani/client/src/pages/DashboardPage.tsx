@@ -15,15 +15,6 @@ const DashboardPage = observer(() => {
   const [showProjectManager, setShowProjectManager] = useState(false);
   const [showChatHistory, setShowChatHistory] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
-  
-  // New conversation state for ChatGPT-style conversation
-  const [conversationMessages, setConversationMessages] = useState<Array<{
-    id: string;
-    role: 'user' | 'assistant';
-    content: string;
-    timestamp: Date;
-    hasGameCode?: boolean;
-  }>>([]);
   const [currentGameContext, setCurrentGameContext] = useState<string>('');
   
   // DEBUG: State for permissions debugging - DO NOT REMOVE
@@ -58,14 +49,45 @@ const DashboardPage = observer(() => {
     }
   };
 
-  // Load chat history when project changes
+  // Load chat history when project changes and restore latest game
   useEffect(() => {
     if (projectStore.currentProject) {
       chatStore.setCurrentProjectId(projectStore.currentProject.id);
+      
+      // Restore the latest game from chat history after messages are loaded
+      setTimeout(() => {
+        const latestGameMessage = chatStore.currentMessages
+          .filter(msg => msg.role === 'assistant' && msg.gameCode)
+          .pop();
+        
+        if (latestGameMessage?.gameCode) {
+          setGeneratedGame(latestGameMessage.gameCode);
+          setCurrentGameContext(latestGameMessage.gameCode);
+        } else {
+          setGeneratedGame('');
+          setCurrentGameContext('');
+        }
+      }, 100); // Small delay to ensure messages are loaded
     } else {
       chatStore.setCurrentProjectId(null);
+      setGeneratedGame('');
+      setCurrentGameContext('');
     }
   }, [projectStore.currentProject, chatStore]);
+
+  // Additional effect to update game when chat messages change
+  useEffect(() => {
+    if (projectStore.currentProject && chatStore.currentMessages.length > 0) {
+      const latestGameMessage = chatStore.currentMessages
+        .filter(msg => msg.role === 'assistant' && msg.gameCode)
+        .pop();
+      
+      if (latestGameMessage?.gameCode && latestGameMessage.gameCode !== currentGameContext) {
+        setGeneratedGame(latestGameMessage.gameCode);
+        setCurrentGameContext(latestGameMessage.gameCode);
+      }
+    }
+  }, [chatStore.currentMessages, projectStore.currentProject, currentGameContext]);
 
   // DEBUG: Auto-test items API on component mount - DO NOT REMOVE
   useEffect(() => {
@@ -89,29 +111,22 @@ const DashboardPage = observer(() => {
     setError(null);
     
     try {
-      // Add user message to conversation
-      const userMessage = {
-        id: Date.now().toString(),
-        role: 'user' as const,
-        content: gamePrompt,
-        timestamp: new Date(),
-      };
-      
-      setConversationMessages(prev => [...prev, userMessage]);
-      
       // Save user message to chat history for persistence
       if (projectStore.currentProject) {
         await chatStore.saveMessage(projectStore.currentProject.id, 'user', gamePrompt);
       }
 
-      // Prepare conversation context for API
-      const conversationContext = [
-        ...conversationMessages,
-        userMessage
-      ].map(msg => ({
+      // Prepare conversation context from stored chat history
+      const conversationContext = chatStore.currentMessages.map(msg => ({
         role: msg.role,
         content: msg.content
       }));
+
+      // Add the current user message to the context
+      conversationContext.push({
+        role: 'user' as const,
+        content: gamePrompt
+      });
 
       const headers = await appStore.getAuthHeaders();
       const response = await fetch('/api/protected/ai/generate', {
@@ -158,25 +173,14 @@ const DashboardPage = observer(() => {
           setCurrentGameContext(gameCode);
         }
         
-        // Add assistant response to conversation
-        const assistantMessage = {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant' as const,
-          content: responseText || (isRTL ? 
-            'יצרתי עבורך משחק. בדוק בחלונית השמאלית!' :
-            'I\'ve created a game for you. Check the left panel!'),
-          timestamp: new Date(),
-          hasGameCode,
-        };
-        
-        setConversationMessages(prev => [...prev, assistantMessage]);
-
         // Save assistant message to chat history for persistence
         if (projectStore.currentProject) {
           await chatStore.saveMessage(
             projectStore.currentProject.id, 
             'assistant', 
-            assistantMessage.content,
+            responseText || (isRTL ? 
+              'יצרתי עבורך משחק. בדוק בחלונית השמאלית!' :
+              'I\'ve created a game for you. Check the left panel!'),
             hasGameCode ? gameCode : undefined
           );
         }
@@ -425,9 +429,9 @@ const DashboardPage = observer(() => {
               )}
 
               {/* Current Conversation - ChatGPT Style */}
-              {conversationMessages.length > 0 ? (
+              {chatStore.currentMessages.length > 0 ? (
                 <div className="space-y-4">
-                  {conversationMessages.map((message) => (
+                  {chatStore.currentMessages.map((message) => (
                     <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                       <div className={`max-w-[80%] rounded-lg p-3 ${
                         message.role === 'user' 
@@ -442,13 +446,13 @@ const DashboardPage = observer(() => {
                               {message.role === 'user' ? t('dashboard.chat.history.user') : t('dashboard.chat.history.assistant')}
                             </span>
                             <span className="text-xs opacity-70">
-                              {message.timestamp.toLocaleString()}
+                              {new Date(message.timestamp).toLocaleString()}
                             </span>
                           </div>
                           <p className={`break-words ${isRTL ? 'text-right' : 'text-left'}`} dir={isRTL ? 'rtl' : 'ltr'}>
                             {message.content}
                           </p>
-                          {message.hasGameCode && (
+                          {message.gameCode && (
                             <div className="mt-2 px-2 py-1 text-xs bg-green-600 rounded">
                               🎮 {isRTL ? 'משחק נוצר' : 'Game Generated'}
                             </div>

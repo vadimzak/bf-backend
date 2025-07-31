@@ -1,6 +1,6 @@
 {
   "name": "gamani",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Gamani full-stack application",
   "main": "dist/server.js",
   "scripts": {
