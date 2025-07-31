@@ -254,11 +254,16 @@ app.get('/', (req: Request, res: Response) => {
 
 // Health check
 app.get('/health', (req: Request, res: Response) => {
-  const appInfo = getAppInfo('gamani', '1.0.0');
+  const version = process.env.APP_VERSION || '1.0.0';
+  const appInfo = getAppInfo('gamani', version);
   const healthData = {
     ...appInfo,
     status: 'healthy',
     uptimeFormatted: formatUptime(appInfo.uptime),
+    version: version,
+    gitCommit: process.env.APP_GIT_COMMIT || 'unknown',
+    buildTime: process.env.APP_BUILD_TIME || 'unknown',
+    deployedBy: process.env.APP_DEPLOYED_BY || 'unknown',
     serverCore: serverCore(),
     services: {
       cognito: !!jwtVerifier,
@@ -944,8 +949,17 @@ async function startServer(): Promise<void> {
     
     // Only start the HTTP server if all services initialized successfully
     app.listen(PORT, () => {
-      log('🚀 [SERVER]', `Gamani app listening on port ${PORT}`);
+      // Get version info from environment or package.json
+      const version = process.env.APP_VERSION || '1.0.0';
+      const gitCommit = process.env.APP_GIT_COMMIT || 'unknown';
+      const buildTime = process.env.APP_BUILD_TIME || 'unknown';
+      const deployedBy = process.env.APP_DEPLOYED_BY || 'unknown';
+      
+      log('🚀 [SERVER]', `Gamani app v${version} listening on port ${PORT}`);
       log('🚀 [SERVER]', `Environment: ${process.env.NODE_ENV || 'development'}`);
+      log('📦 [VERSION]', `Git commit: ${gitCommit}`);
+      log('📦 [VERSION]', `Build time: ${buildTime}`);
+      log('📦 [VERSION]', `Deployed by: ${deployedBy}`);
       log('🚀 [SERVER]', `All services initialized successfully`);
     });
   } catch (error) {

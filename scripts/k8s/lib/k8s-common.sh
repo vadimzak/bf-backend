@@ -224,18 +224,29 @@ get_ecr_registry() {
 # Create ECR repository if it doesn't exist
 ensure_ecr_repository() {
     local repo_name="$1"
+    local apply_lifecycle="${2:-true}"
     
     if aws ecr describe-repositories \
         --repository-names "$repo_name" \
         --profile "$AWS_PROFILE" \
         --region "$ECR_REGION" >/dev/null 2>&1; then
         log_debug "ECR repository $repo_name already exists"
+        
+        # Apply lifecycle policy to existing repository if requested
+        if [[ "$apply_lifecycle" == "true" ]]; then
+            create_ecr_lifecycle_policy "$repo_name" 10
+        fi
     else
         log_info "Creating ECR repository: $repo_name"
         aws ecr create-repository \
             --repository-name "$repo_name" \
             --profile "$AWS_PROFILE" \
             --region "$ECR_REGION" >/dev/null
+        
+        # Apply lifecycle policy to new repository
+        if [[ "$apply_lifecycle" == "true" ]]; then
+            create_ecr_lifecycle_policy "$repo_name" 10
+        fi
     fi
 }
 
@@ -290,6 +301,98 @@ list_ecr_repositories() {
         --output text \
         --profile "$AWS_PROFILE" \
         --region "$ECR_REGION" 2>/dev/null || echo ""
+}
+
+# Create ECR lifecycle policy to keep only last N images
+create_ecr_lifecycle_policy() {
+    local repo_name="$1"
+    local keep_count="${2:-10}"
+    
+    log_info "Creating ECR lifecycle policy for $repo_name (keep last $keep_count images)"
+    
+    local policy_json=$(cat <<EOF
+{
+  "rules": [
+    {
+      "rulePriority": 1,
+      "description": "Keep only last $keep_count images",
+      "selection": {
+        "tagStatus": "any",
+        "countType": "imageCountMoreThan",
+        "countNumber": $keep_count
+      },
+      "action": {
+        "type": "expire"
+      }
+    }
+  ]
+}
+EOF
+)
+    
+    aws ecr put-lifecycle-policy \
+        --repository-name "$repo_name" \
+        --lifecycle-policy-text "$policy_json" \
+        --profile "$AWS_PROFILE" \
+        --region "$ECR_REGION" >/dev/null
+}
+
+# Apply lifecycle policies to all app ECR repositories
+apply_ecr_lifecycle_policies() {
+    local keep_count="${1:-10}"
+    
+    log_info "Applying ECR lifecycle policies (keep last $keep_count images)..."
+    
+    # Get all ECR repositories
+    local repos=$(list_ecr_repositories)
+    
+    for repo in $repos; do
+        # Only apply to app repositories (not system repositories)
+        if [[ -d "$(cd "$SCRIPT_DIR/../.." && pwd)/apps/$repo" ]]; then
+            create_ecr_lifecycle_policy "$repo" "$keep_count"
+        fi
+    done
+}
+
+# Clean up old ECR images manually (immediate cleanup)
+cleanup_old_ecr_images() {
+    local repo_name="$1"
+    local keep_count="${2:-10}"
+    local dry_run="${3:-false}"
+    
+    log_info "Cleaning up old images in ECR repository: $repo_name (keep last $keep_count)"
+    
+    # Get image details sorted by image pushed date
+    local images=$(aws ecr describe-images \
+        --repository-name "$repo_name" \
+        --query 'sort_by(imageDetails,&imagePushedAt)[:-'$keep_count'].imageDigest' \
+        --output text \
+        --profile "$AWS_PROFILE" \
+        --region "$ECR_REGION" 2>/dev/null)
+    
+    if [[ -z "$images" ]] || [[ "$images" == "None" ]]; then
+        log_info "No old images to clean up in $repo_name"
+        return 0
+    fi
+    
+    local image_count=$(echo "$images" | wc -w)
+    
+    if [[ "$dry_run" == "true" ]]; then
+        log_info "DRY RUN: Would delete $image_count old images from $repo_name"
+        return 0
+    fi
+    
+    log_info "Deleting $image_count old images from $repo_name..."
+    
+    for digest in $images; do
+        aws ecr batch-delete-image \
+            --repository-name "$repo_name" \
+            --image-ids imageDigest="$digest" \
+            --profile "$AWS_PROFILE" \
+            --region "$ECR_REGION" >/dev/null
+    done
+    
+    log_info "Cleaned up $image_count old images from $repo_name"
 }
 
 # Delete all app ECR repositories
@@ -416,6 +519,66 @@ setup_app_iam() {
     
     log_info "✅ IAM role setup completed for $app_name"
     return 0
+}
+
+# Version management functions
+
+# Get current version from package.json
+get_app_version() {
+    local app_name="$1"
+    local project_root="${2:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+    local package_json="$project_root/apps/$app_name/package.json"
+    
+    if [[ -f "$package_json" ]]; then
+        node -p "require('$package_json').version" 2>/dev/null || echo "1.0.0"
+    else
+        echo "1.0.0"
+    fi
+}
+
+# Bump version in package.json
+bump_app_version() {
+    local app_name="$1"
+    local bump_type="${2:-patch}"  # patch, minor, major
+    local project_root="${3:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+    local app_dir="$project_root/apps/$app_name"
+    
+    if [[ ! -f "$app_dir/package.json" ]]; then
+        log_error "package.json not found for $app_name"
+        return 1
+    fi
+    
+    local old_version=$(get_app_version "$app_name" "$project_root")
+    
+    # Use npm version to bump version
+    cd "$app_dir"
+    local new_version=$(npm version "$bump_type" --no-git-tag-version 2>/dev/null | tr -d 'v')
+    cd - >/dev/null
+    
+    if [[ -n "$new_version" ]]; then
+        log_info "📈 Version bumped: $app_name $old_version → $new_version ($bump_type)"
+        echo "$new_version"
+    else
+        log_error "Failed to bump version for $app_name"
+        return 1
+    fi
+}
+
+# Create version info for deployment
+create_version_info() {
+    local app_name="$1"
+    local project_root="${2:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
+    local version=$(get_app_version "$app_name" "$project_root")
+    local git_commit=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+    local build_time=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+    local deployed_by=$(whoami)
+    
+    export APP_VERSION="$version"
+    export APP_GIT_COMMIT="$git_commit"
+    export APP_BUILD_TIME="$build_time"
+    export APP_DEPLOYED_BY="$deployed_by"
+    
+    log_info "📦 Version info: $app_name v$version (commit: $git_commit, built: $build_time)"
 }
 
 # Validate deployment prerequisites including IAM

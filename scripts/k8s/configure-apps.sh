@@ -144,13 +144,15 @@ build_docker_image() {
     
     log_info "Building Docker image for $app_name..."
     
+    # Build from workspace root context for NX monorepo
     # Build for platform matching cluster architecture
     local platform="${DOCKER_PLATFORM:-linux/amd64}"
     log_info "Building for platform: $platform"
     docker build \
         --platform "$platform" \
         -t "$app_name:latest" \
-        "$app_dir"
+        -f "$app_dir/Dockerfile" \
+        "$PROJECT_ROOT"
 }
 
 # Push Docker image to ECR
@@ -185,6 +187,9 @@ generate_app_manifests() {
     # Read app configuration
     read_app_config "$app_name"
     
+    # Create version info for manifest generation
+    create_version_info "$app_name" "$PROJECT_ROOT"
+    
     log_info "Generating K8s manifests for $app_name..."
     
     # Create manifests directory
@@ -215,6 +220,7 @@ spec:
       containers:
       - name: app
         image: ${registry}/${APP_NAME}:latest
+        imagePullPolicy: Always
         ports:
         - containerPort: ${APP_PORT}
           name: http
@@ -223,6 +229,14 @@ spec:
           value: production
         - name: PORT
           value: "${APP_PORT}"
+        - name: APP_VERSION
+          value: "${APP_VERSION:-1.0.0}"
+        - name: APP_GIT_COMMIT
+          value: "${APP_GIT_COMMIT:-unknown}"
+        - name: APP_BUILD_TIME
+          value: "${APP_BUILD_TIME:-unknown}"
+        - name: APP_DEPLOYED_BY
+          value: "${APP_DEPLOYED_BY:-unknown}"
         livenessProbe:
           httpGet:
             path: /health

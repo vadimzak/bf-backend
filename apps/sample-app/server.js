@@ -30,11 +30,15 @@ app.get('/', (req, res) => {
 
 // Health check
 app.get('/health', (req, res) => {
+  const version = process.env.APP_VERSION || '1.0.0';
   res.json({ 
     status: 'healthy',
     service: 'sample-app',
     timestamp: new Date().toISOString(),
-    version: '1.0.3',
+    version: version,
+    gitCommit: process.env.APP_GIT_COMMIT || 'unknown',
+    buildTime: process.env.APP_BUILD_TIME || 'unknown',
+    deployedBy: process.env.APP_DEPLOYED_BY || 'unknown',
     serverCore: serverCore()
   });
 });
@@ -47,6 +51,14 @@ app.use((err, req, res, next) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`Sample app listening on port ${PORT}`);
-  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  const version = process.env.APP_VERSION || '1.0.0';
+  const gitCommit = process.env.APP_GIT_COMMIT || 'unknown';
+  const buildTime = process.env.APP_BUILD_TIME || 'unknown';
+  const deployedBy = process.env.APP_DEPLOYED_BY || 'unknown';
+  
+  console.log(`🚀 Sample app v${version} listening on port ${PORT}`);
+  console.log(`📦 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`📦 Git commit: ${gitCommit}`);
+  console.log(`📦 Build time: ${buildTime}`);
+  console.log(`📦 Deployed by: ${deployedBy}`);
 });

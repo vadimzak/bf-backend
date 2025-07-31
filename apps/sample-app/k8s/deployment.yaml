@@ -18,6 +18,7 @@ spec:
       containers:
       - name: app
         image: 363397505860.dkr.ecr.il-central-1.amazonaws.com/sample-app:latest
+        imagePullPolicy: Always
         ports:
         - containerPort: 3001
           name: http
@@ -26,6 +27,14 @@ spec:
           value: production
         - name: PORT
           value: "3001"
+        - name: APP_VERSION
+          value: "1.0.0"
+        - name: APP_GIT_COMMIT
+          value: "unknown"
+        - name: APP_BUILD_TIME
+          value: "unknown"
+        - name: APP_DEPLOYED_BY
+          value: "unknown"
         livenessProbe:
           httpGet:
             path: /health

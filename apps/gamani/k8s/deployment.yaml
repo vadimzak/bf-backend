@@ -19,6 +19,7 @@ spec:
       containers:
       - name: app
         image: 363397505860.dkr.ecr.il-central-1.amazonaws.com/gamani:latest
+        imagePullPolicy: Always
         ports:
         - containerPort: 3002
           name: http
@@ -49,6 +50,14 @@ spec:
           value: "arn:aws:iam::363397505860:role/gamani-app-role"
         - name: AWS_WEB_IDENTITY_TOKEN_FILE
           value: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+        - name: APP_VERSION
+          value: "1.0.0"
+        - name: APP_GIT_COMMIT
+          value: "unknown"
+        - name: APP_BUILD_TIME
+          value: "unknown"
+        - name: APP_DEPLOYED_BY
+          value: "unknown"
         livenessProbe:
           httpGet:
             path: /health

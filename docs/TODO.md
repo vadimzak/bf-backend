@@ -1,6 +1,6 @@
 ~ POD AWS Roles
 ~ implement Gamani
-- update ALL packages to latest (incl AWS)
+~ understand how it is that the server had a non-latest image deployed
 - add envs?
 - add versioning and report it from the server
 - rewrite sh scripts in ts?
