@@ -11,7 +11,11 @@ const DashboardPage = observer(() => {
 
   console.log('🔧 [DASHBOARD] DashboardPage rendering - authStore.isAuthenticated:', authStore.isAuthenticated);
   console.log('🔧 [DASHBOARD] AuthStore state:', { 
-    user: authStore.user ? { email: authStore.user.email, uid: authStore.user.uid } : null,
+    user: authStore.user ? { 
+      username: authStore.user.username, 
+      userId: authStore.user.userId,
+      profile: authStore.user.profile 
+    } : null,
     loading: authStore.loading,
     error: authStore.error
   });
@@ -58,7 +62,7 @@ const DashboardPage = observer(() => {
         <div>
           <h1 className="text-3xl font-bold">Dashboard</h1>
           <p className="text-muted-foreground">
-            Welcome back, {authStore.user?.displayName || authStore.user?.email}
+            Welcome back, {authStore.user?.profile?.name || authStore.user?.username}
           </p>
         </div>
         <button

@@ -2,8 +2,8 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { StoreContext, rootStore } from './stores';
 import { observer } from 'mobx-react-lite';
 import { useEffect } from 'react';
-import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from './config/firebase';
+import { getCurrentUser } from 'aws-amplify/auth';
+import './config/aws-config'; // Initialize Amplify
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
@@ -13,36 +13,62 @@ const AppContent = observer(() => {
   const { authStore } = useStore();
 
   useEffect(() => {
-    console.log('🔧 [APP] Setting up auth state listener');
+    console.log('🔧 [APP] Setting up Cognito auth state listener');
     authStore.setLoading(true);
     
-    // Set up auth state listener
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      console.log('🔥 [AUTH STATE] Auth state changed:', user ? `Signed in as ${user.email} (UID: ${user.uid})` : 'Signed out');
-      console.log('🔥 [AUTH STATE] User object:', user ? { email: user.email, uid: user.uid, displayName: user.displayName } : null);
-      authStore.setUser(user);
-      authStore.setLoading(false);
-      console.log('🔥 [AUTH STATE] AuthStore updated - isAuthenticated:', !!user);
-    });
-
-    // Ensure auth state is ready immediately
-    auth.authStateReady().then(() => {
-      console.log('🔥 [AUTH STATE] Initial auth state is ready');
-      // If loading is still true, it means onAuthStateChanged hasn't fired yet
-      // This can happen in some edge cases, so we manually check current user
-      if (authStore.loading) {
-        console.log('🔥 [AUTH STATE] Manually checking current user:', auth.currentUser?.email || 'null');
-        authStore.setUser(auth.currentUser);
+    const checkAuthState = async () => {
+      try {
+        console.log('🔧 [APP] Checking current auth state...');
+        
+        // Add a small delay to allow Amplify to process OAuth callbacks
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        const user = await getCurrentUser();
+        console.log('✅ [AUTH STATE] User authenticated:', { username: user.username, userId: user.userId });
+        
+        // Fetch user profile attributes
+        const profile = await authStore.fetchUserProfile();
+        
+        authStore.setUser({
+          userId: user.userId,
+          username: user.username,
+          profile: profile || undefined,
+          signInDetails: user.signInDetails
+        });
+        authStore.setLoading(false);
+      } catch (error) {
+        console.log('🔧 [AUTH STATE] No authenticated user found, error:', error instanceof Error ? error.message : String(error));
+        authStore.setUser(null);
         authStore.setLoading(false);
       }
-    }).catch((error) => {
-      console.error('❌ [AUTH STATE] Error waiting for auth state ready:', error);
-      authStore.setLoading(false);
-    });
+    };
 
+    checkAuthState();
+
+    // Listen for auth state changes via URL changes (for OAuth redirects)
+    const handleLocationChange = () => {
+      console.log('🔧 [APP] Location changed, rechecking auth state');
+      // Add a longer delay for OAuth callback processing
+      setTimeout(() => {
+        checkAuthState();
+      }, 500);
+    };
+
+    // Also check when the page is focused (user returns from OAuth)
+    const handleFocus = () => {
+      console.log('🔧 [APP] Page focused, rechecking auth state');
+      setTimeout(() => {
+        checkAuthState();
+      }, 500);
+    };
+
+    window.addEventListener('popstate', handleLocationChange);
+    window.addEventListener('focus', handleFocus);
+    
     return () => {
       console.log('🔧 [APP] Cleaning up auth state listener');
-      unsubscribe();
+      window.removeEventListener('popstate', handleLocationChange);
+      window.removeEventListener('focus', handleFocus);
     };
   }, [authStore]);
 

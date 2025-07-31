@@ -6,8 +6,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { serverCore, getAppInfo, formatUptime, createApiResponse, createErrorResponse, AppInfo } from '@bf-backend/server-core';
 import dotenv from 'dotenv';
 
-// Firebase Admin SDK
-import * as admin from 'firebase-admin';
+// AWS JWT Verify for Cognito
+import { CognitoJwtVerifier } from 'aws-jwt-verify';
 
 // AWS SDK for DynamoDB and Secrets Manager
 import AWS from 'aws-sdk';
@@ -19,7 +19,13 @@ dotenv.config();
 
 // Types
 interface AuthenticatedRequest extends Request {
-  user?: admin.auth.DecodedIdToken;
+  user?: {
+    sub: string;
+    username: string;
+    email?: string;
+    email_verified?: boolean;
+    'cognito:username'?: string;
+  };
 }
 
 interface CreateItemRequest {
@@ -40,63 +46,14 @@ const secretsManager = new AWS.SecretsManager({
   region: process.env.AWS_REGION || 'il-central-1'
 });
 
-// Function to get Firebase service account from AWS Secrets Manager
-async function getFirebaseCredentials(): Promise<any> {
-  const secretName = 'gamani/firebase/service-account';
-  
-  try {
-    console.log('Fetching Firebase credentials from AWS Secrets Manager...');
-    const result = await secretsManager.getSecretValue({ SecretId: secretName }).promise();
-    
-    if (result.SecretString) {
-      return JSON.parse(result.SecretString);
-    } else {
-      throw new Error('Secret string is empty');
-    }
-  } catch (error) {
-    console.error('Failed to fetch Firebase credentials from Secrets Manager:', error);
-    return null;
-  }
-}
+// Initialize Cognito JWT Verifier
+const jwtVerifier = CognitoJwtVerifier.create({
+  userPoolId: 'il-central-1_aJg6S7Rl3',
+  tokenUse: 'access',
+  clientId: '1qa3m3ok5i8ehg0ef8jg3fnff6',
+});
 
-// Initialize Firebase Admin asynchronously
-async function initializeFirebaseAdmin(): Promise<void> {
-  if (admin.apps.length > 0) {
-    console.log('Firebase Admin already initialized');
-    return;
-  }
-
-  try {
-    // First try AWS Secrets Manager (production)
-    const serviceAccount = await getFirebaseCredentials();
-    if (serviceAccount) {
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-      });
-      console.log('✅ Firebase Admin initialized from AWS Secrets Manager');
-      return;
-    }
-
-    if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
-      const serviceAccountFromEnv = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
-      admin.initializeApp({
-        credential: admin.credential.cert(serviceAccountFromEnv),
-      });
-      console.log('✅ Firebase Admin initialized from environment variable');
-      return;
-    }
-
-    // No credentials found
-    console.warn('⚠️ No Firebase credentials found. Authentication will not work.');
-    console.warn('Options:');
-    console.warn('1. Store credentials in AWS Secrets Manager (production)');
-    console.warn('2. Set GOOGLE_APPLICATION_CREDENTIALS environment variable');
-    console.warn('3. Set FIREBASE_SERVICE_ACCOUNT_JSON environment variable');
-    
-  } catch (error) {
-    console.error('❌ Failed to initialize Firebase Admin:', error);
-  }
-}
+console.log('✅ Cognito JWT Verifier initialized');
 
 // Initialize AWS DynamoDB
 const dynamodb = new AWS.DynamoDB.DocumentClient({
@@ -132,19 +89,12 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-// Firebase Auth middleware
-const authenticateFirebase = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
+// Cognito Auth middleware
+const authenticateCognito = async (req: AuthenticatedRequest, res: Response, next: NextFunction): Promise<void> => {
   const timestamp = new Date().toISOString();
-  console.log(`🔐 [SERVER AUTH] ${timestamp} - Authentication attempt for ${req.method} ${req.path}`);
+  console.log(`🔐 [SERVER AUTH] ${timestamp} - Cognito authentication attempt for ${req.method} ${req.path}`);
   
   try {
-    // Check if Firebase Admin is initialized
-    if (admin.apps.length === 0) {
-      console.warn('🔐 [SERVER AUTH] Firebase Admin not initialized, authentication disabled');
-      res.status(503).json({ error: 'Authentication service unavailable' });
-      return;
-    }
-
     const authHeader = req.headers.authorization;
     console.log('🔐 [SERVER AUTH] Authorization header present:', !!authHeader);
     console.log('🔐 [SERVER AUTH] Authorization header starts with Bearer:', authHeader?.startsWith('Bearer ') || false);
@@ -155,23 +105,29 @@ const authenticateFirebase = async (req: AuthenticatedRequest, res: Response, ne
       return;
     }
 
-    const idToken = authHeader.split('Bearer ')[1];
-    console.log('🔐 [SERVER AUTH] ID Token length:', idToken.length);
-    console.log('🔐 [SERVER AUTH] ID Token preview:', idToken.substring(0, 20) + '...');
+    const accessToken = authHeader.split('Bearer ')[1];
+    console.log('🔐 [SERVER AUTH] Access Token length:', accessToken.length);
+    console.log('🔐 [SERVER AUTH] Access Token preview:', accessToken.substring(0, 20) + '...');
     
-    console.log('🔐 [SERVER AUTH] Verifying token with Firebase Admin...');
-    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    console.log('🔐 [SERVER AUTH] Verifying token with Cognito...');
+    const payload = await jwtVerifier.verify(accessToken);
     console.log('✅ [SERVER AUTH] Token verification successful');
     console.log('✅ [SERVER AUTH] User details:', { 
-      uid: decodedToken.uid, 
-      email: decodedToken.email,
-      name: decodedToken.name 
+      sub: payload.sub, 
+      username: payload.username,
+      client_id: payload.client_id 
     });
     
-    req.user = decodedToken;
+    req.user = {
+      sub: payload.sub as string,
+      username: (payload.username as string) || (payload['cognito:username'] as string) || '',
+      email: payload.email as string | undefined,
+      email_verified: payload.email_verified as boolean | undefined,
+      'cognito:username': payload['cognito:username'] as string | undefined
+    };
     next();
   } catch (error: any) {
-    console.error('❌ [SERVER AUTH] Firebase auth error:', error);
+    console.error('❌ [SERVER AUTH] Cognito auth error:', error);
     console.error('❌ [SERVER AUTH] Error details:', {
       name: error.name,
       message: error.message,
@@ -197,7 +153,7 @@ app.get('/health', (req: Request, res: Response) => {
     uptimeFormatted: formatUptime(appInfo.uptime),
     serverCore: serverCore(),
     services: {
-      firebase: !!admin.apps.length,
+      cognito: !!jwtVerifier,
       dynamodb: !!dynamodb,
       googleAI: !!genAI
     }
@@ -207,19 +163,20 @@ app.get('/health', (req: Request, res: Response) => {
 });
 
 // Auth routes
-app.post('/api/auth/verify', authenticateFirebase, (req: AuthenticatedRequest, res: Response) => {
+app.post('/api/auth/verify', authenticateCognito, (req: AuthenticatedRequest, res: Response) => {
   console.log('✅ [SERVER AUTH] /api/auth/verify - User authenticated successfully');
   const userData = {
-    uid: req.user?.uid,
+    sub: req.user?.sub,
+    username: req.user?.username,
     email: req.user?.email,
-    name: req.user?.name
+    email_verified: req.user?.email_verified
   };
   console.log('✅ [SERVER AUTH] Returning user data:', userData);
   res.json(createApiResponse(userData, 'User authenticated successfully'));
 });
 
 // Protected API routes
-app.use('/api/protected', authenticateFirebase);
+app.use('/api/protected', authenticateCognito);
 
 // DynamoDB routes
 app.get('/api/protected/items', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
@@ -228,7 +185,7 @@ app.get('/api/protected/items', async (req: AuthenticatedRequest, res: Response)
       TableName: process.env.DYNAMODB_TABLE_NAME || 'gamani-items',
       FilterExpression: 'userId = :userId',
       ExpressionAttributeValues: {
-        ':userId': req.user?.uid
+        ':userId': req.user?.sub
       }
     };
 
@@ -245,7 +202,7 @@ app.post('/api/protected/items', async (req: AuthenticatedRequest, res: Response
     const { title, content }: CreateItemRequest = req.body;
     const item = {
       id: uuidv4(),
-      userId: req.user?.uid,
+      userId: req.user?.sub,
       title,
       content,
       createdAt: new Date().toISOString(),
@@ -298,19 +255,9 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   res.status(500).json({ error: 'Something went wrong!' });
 });
 
-// Initialize Firebase Admin before starting server
-initializeFirebaseAdmin().then(() => {
-  // Start server
-  app.listen(PORT, () => {
-    console.log(`Gamani app listening on port ${PORT}`);
-    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`Firebase Admin initialized: ${admin.apps.length > 0 ? 'Yes' : 'No'}`);
-  });
-}).catch((error) => {
-  console.error('Failed to initialize Firebase Admin:', error);
-  // Start server anyway for development
-  app.listen(PORT, () => {
-    console.log(`Gamani app listening on port ${PORT} (Firebase disabled)`);
-    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-  });
+// Start server
+app.listen(PORT, () => {
+  console.log(`Gamani app listening on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`Cognito JWT Verifier initialized: Yes`);
 });

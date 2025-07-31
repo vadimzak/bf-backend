@@ -12,7 +12,7 @@ export interface HealthResponse {
     status: string;
     serverCore: string;
     services: {
-      firebase: boolean;
+      cognito: boolean;
       dynamodb: boolean;
       googleAI: boolean;
     };

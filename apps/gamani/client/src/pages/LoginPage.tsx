@@ -1,7 +1,6 @@
 import { observer } from 'mobx-react-lite';
 import { useStore } from '../stores';
-import { signInWithPopup } from 'firebase/auth';
-import { auth, googleProvider } from '../config/firebase';
+import { signInWithRedirect } from 'aws-amplify/auth';
 import { Navigate } from 'react-router-dom';
 import { useEffect } from 'react';
 
@@ -10,61 +9,66 @@ const LoginPage = observer(() => {
 
   console.log('🔧 [LOGIN] LoginPage rendering - authStore.isAuthenticated:', authStore.isAuthenticated);
 
-  // Clear error when navigating to login page
+  // Check for OAuth callback and clear error when navigating to login page
   useEffect(() => {
+    const checkOAuthCallback = async () => {
+      // Check if we have OAuth callback parameters in the URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('code');
+      const state = urlParams.get('state');
+      
+      if (code) {
+        console.log('🔧 [OAUTH] OAuth callback detected with code:', code.substring(0, 10) + '...');
+        console.log('🔧 [OAUTH] State parameter:', state);
+        
+        // Clear the URL parameters to avoid processing again
+        window.history.replaceState({}, document.title, window.location.pathname);
+        
+        // Let Amplify handle the token exchange - it should automatically detect the callback
+        // and update the auth state. We just need to wait for the auth state to update.
+        console.log('🔧 [OAUTH] Waiting for Amplify to process OAuth callback...');
+        return;
+      }
+      
+      console.log('🔧 [LOGIN] No OAuth callback detected, normal login page load');
+    };
+
+    checkOAuthCallback();
     authStore.setError(null);
   }, [authStore]);
 
   const handleGoogleSignIn = async () => {
-    console.log('🚀 [SIGNIN] Starting Google popup sign in');
+    console.log('🚀 [SIGNIN] Starting Google OAuth sign in');
     
     authStore.setLoading(true);
     authStore.setError(null);
     
     try {
-      console.log('🚀 [POPUP] Attempting signInWithPopup...');
-      const result = await signInWithPopup(auth, googleProvider);
-      console.log('✅ [POPUP] Sign in successful:', result.user?.email);
-      
-      // The auth state listener will handle the rest
+      console.log('🚀 [COGNITO] Attempting signInWithRedirect...');
+      await signInWithRedirect({ provider: 'Google' });
+      console.log('✅ [COGNITO] Redirect initiated successfully');
+      // User will be redirected to Google, then back to our app
       
     } catch (error: any) {
-      console.error('❌ [POPUP] Sign in failed:', error);
-      console.error('❌ [POPUP] Error code:', error.code);
-      console.error('❌ [POPUP] Error message:', error.message);
+      console.error('❌ [COGNITO] Sign in failed:', error);
+      console.error('❌ [COGNITO] Error message:', error.message);
       
       // Handle specific errors
-      if (error.code === 'auth/popup-closed-by-user') {
-        authStore.setError('Sign in was cancelled. Please try again.');
-      } else if (error.code === 'auth/popup-blocked') {
-        authStore.setError('Popup was blocked by your browser. Please allow popups and try again.');
-      } else if (error.code === 'auth/unauthorized-domain') {
+      if (error.message?.includes('unauthorized')) {
         authStore.setError('This domain is not authorized. Please contact support.');
-      } else if (error.code === 'auth/configuration-not-found') {
-        authStore.setError('Firebase configuration error. Please contact support.');
+      } else if (error.message?.includes('configuration')) {
+        authStore.setError('Authentication configuration error. Please contact support.');
       } else {
-        authStore.setError(`Failed to sign in: ${error.message}`);
+        authStore.setError(`Failed to start sign in: ${error.message}`);
       }
       
       authStore.setLoading(false);
     }
   };
 
-
-  // const handleClearSession = async () => {
-  //   console.log('🧹 [CLEAR] Starting session clear');
-  //   try {
-  //     await authStore.signOut();
-  //     console.log('✅ [CLEAR] Session cleared successfully');
-  //   } catch (error) {
-  //     console.error('❌ [CLEAR] Clear session error:', error);
-  //   }
-  // };
-
-
   if (authStore.isAuthenticated) {
     console.log('✅ [LOGIN] User is authenticated, redirecting to dashboard');
-    console.log('✅ [LOGIN] User details:', { email: authStore.user?.email, uid: authStore.user?.uid });
+    console.log('✅ [LOGIN] User details:', { username: authStore.user?.username, userId: authStore.user?.userId });
     return <Navigate to="/dashboard" replace />;
   }
 
@@ -87,7 +91,7 @@ const LoginPage = observer(() => {
             disabled={authStore.loading}
             className="w-full inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none ring-offset-background bg-primary text-primary-foreground hover:bg-primary/90 h-10 py-2 px-4 mb-2"
           >
-            {authStore.loading ? 'Signing in...' : 'Sign in with Google'}
+            {authStore.loading ? 'Redirecting to Google...' : 'Sign in with Google'}
           </button>
         </div>
       </div>
