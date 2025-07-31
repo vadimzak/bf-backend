@@ -41,6 +41,14 @@ spec:
           value: "3"
         - name: DYNAMODB_TABLE_NAME
           value: "gamani-items"
+        - name: DYNAMODB_PROJECTS_TABLE
+          value: "gamani-projects"
+        - name: DYNAMODB_MESSAGES_TABLE
+          value: "gamani-messages"
+        - name: AWS_ROLE_ARN
+          value: "arn:aws:iam::363397505860:role/gamani-app-role"
+        - name: AWS_WEB_IDENTITY_TOKEN_FILE
+          value: "/var/run/secrets/kubernetes.io/serviceaccount/token"
         livenessProbe:
           httpGet:
             path: /health

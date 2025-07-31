@@ -13,7 +13,7 @@ import { CognitoJwtVerifier } from 'aws-jwt-verify';
 import AWS from 'aws-sdk';
 
 // Google Generative AI
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 
 dotenv.config();
 
@@ -43,6 +43,12 @@ interface UpdateProjectRequest {
   description?: string;
 }
 
+interface CreateMessageRequest {
+  role: 'user' | 'assistant';
+  content: string;
+  gameCode?: string;
+}
+
 interface AIGenerateRequest {
   prompt: string;
 }
@@ -51,16 +57,16 @@ const app = express();
 const PORT = process.env.PORT || 3002;
 
 // AWS Configuration
-// Use environment credentials in development, default credential chain in production
+// Use environment credentials in development, IRSA in production
 if (process.env.NODE_ENV !== 'production') {
   console.log('🔧 [AWS] Using environment credentials for development (minimal permissions)');
   AWS.config.credentials = new AWS.EnvironmentCredentials('AWS');
   console.log('✅ [AWS] Using minimal permissions from assumed role');
 } else {
-  console.log('🔧 [AWS] Using default credential chain for production');
-  // In production, use default credential chain (EC2 instance role)
-  // The master role has the necessary DynamoDB permissions
-  console.log('✅ [AWS] Using master instance role permissions');
+  console.log('🔧 [AWS] Using IRSA (IAM Roles for Service Accounts) for production');
+  // In production, use default credential chain which will pick up IRSA credentials
+  // The service account is annotated with the specific IAM role ARN
+  console.log('✅ [AWS] Using IRSA with per-pod IAM role permissions');
 }
 
 AWS.config.region = process.env.AWS_REGION || 'il-central-1';
@@ -83,8 +89,35 @@ const dynamodb = new AWS.DynamoDB.DocumentClient({
   region: process.env.AWS_REGION || 'il-central-1'
 });
 
-// Initialize Google Generative AI
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || '');
+// Initialize Google Generative AI (will be set after fetching from Secrets Manager)
+let genAI: GoogleGenAI;
+
+// Function to initialize Google AI with API key from Secrets Manager
+async function initializeGoogleAI() {
+  try {
+    console.log('🔐 [GOOGLE AI] Fetching API key from Secrets Manager...');
+    const result = await secretsManager.getSecretValue({
+      SecretId: 'gamani/google-ai-api-key'
+    }).promise();
+    
+    const apiKey = result.SecretString;
+    if (!apiKey || apiKey === 'PLACEHOLDER_KEY_NEEDS_UPDATE') {
+      console.warn('⚠️ [GOOGLE AI] API key is placeholder or missing. Game generation will not work.');
+      return;
+    }
+    
+    genAI = new GoogleGenAI({
+      apiKey: apiKey
+    });
+    console.log('✅ [GOOGLE AI] Initialized successfully');
+  } catch (error) {
+    console.error('❌ [GOOGLE AI] Failed to fetch API key from Secrets Manager:', error);
+    console.warn('⚠️ [GOOGLE AI] Game generation will not work without API key');
+  }
+}
+
+// Initialize Google AI on startup
+initializeGoogleAI();
 
 // Middleware - Disable CSP completely to allow Firebase auth
 app.use(helmet({
@@ -438,6 +471,191 @@ app.delete('/api/protected/projects/:id', async (req: AuthenticatedRequest, res:
   }
 });
 
+// Chat history routes
+app.get('/api/protected/projects/:id/messages', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  console.log('💬 [CHAT API] GET /api/protected/projects/:id/messages - Starting');
+  
+  try {
+    const { id: projectId } = req.params;
+    
+    if (!projectId) {
+      res.status(400).json(createErrorResponse('Project ID is required'));
+      return;
+    }
+
+    // First verify the project belongs to the user
+    const projectParams = {
+      TableName: process.env.DYNAMODB_PROJECTS_TABLE || 'gamani-projects',
+      Key: { id: projectId }
+    };
+
+    const projectResult = await dynamodb.get(projectParams).promise();
+    
+    if (!projectResult.Item) {
+      res.status(404).json(createErrorResponse('Project not found'));
+      return;
+    }
+
+    if (projectResult.Item.userId !== req.user?.sub) {
+      res.status(403).json(createErrorResponse('Not authorized to access this project'));
+      return;
+    }
+
+    // Get chat messages for the project
+    const params = {
+      TableName: process.env.DYNAMODB_MESSAGES_TABLE || 'gamani-messages',
+      FilterExpression: 'projectId = :projectId',
+      ExpressionAttributeValues: {
+        ':projectId': projectId
+      }
+    };
+
+    console.log('💬 [CHAT API] Fetching messages for project:', projectId);
+    
+    const result = await dynamodb.scan(params).promise();
+    
+    // Sort messages by timestamp
+    const messages = (result.Items || []).sort((a, b) => 
+      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+    
+    console.log('✅ [CHAT API] Messages retrieved successfully, count:', messages.length);
+    res.json(createApiResponse({ messages }, 'Messages retrieved successfully'));
+  } catch (error) {
+    console.error('❌ [CHAT API] Error fetching messages:', error);
+    res.status(500).json(createErrorResponse('Failed to fetch messages'));
+  }
+});
+
+app.post('/api/protected/projects/:id/messages', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  console.log('💬 [CHAT API] POST /api/protected/projects/:id/messages - Starting');
+  
+  try {
+    const { id: projectId } = req.params;
+    const { role, content, gameCode }: CreateMessageRequest = req.body;
+    
+    if (!projectId) {
+      res.status(400).json(createErrorResponse('Project ID is required'));
+      return;
+    }
+
+    if (!role || !content) {
+      res.status(400).json(createErrorResponse('Role and content are required'));
+      return;
+    }
+
+    if (!['user', 'assistant'].includes(role)) {
+      res.status(400).json(createErrorResponse('Role must be either "user" or "assistant"'));
+      return;
+    }
+
+    // First verify the project belongs to the user
+    const projectParams = {
+      TableName: process.env.DYNAMODB_PROJECTS_TABLE || 'gamani-projects',
+      Key: { id: projectId }
+    };
+
+    const projectResult = await dynamodb.get(projectParams).promise();
+    
+    if (!projectResult.Item) {
+      res.status(404).json(createErrorResponse('Project not found'));
+      return;
+    }
+
+    if (projectResult.Item.userId !== req.user?.sub) {
+      res.status(403).json(createErrorResponse('Not authorized to access this project'));
+      return;
+    }
+
+    // Create the message
+    const message = {
+      id: uuidv4(),
+      projectId,
+      role,
+      content,
+      ...(gameCode && { gameCode }),
+      timestamp: new Date().toISOString()
+    };
+
+    const params = {
+      TableName: process.env.DYNAMODB_MESSAGES_TABLE || 'gamani-messages',
+      Item: message
+    };
+
+    console.log('💬 [CHAT API] Saving message:', JSON.stringify(message, null, 2));
+    
+    await dynamodb.put(params).promise();
+    
+    console.log('✅ [CHAT API] Message saved successfully');
+    res.json(createApiResponse({ message }, 'Message saved successfully'));
+  } catch (error) {
+    console.error('❌ [CHAT API] Error saving message:', error);
+    res.status(500).json(createErrorResponse('Failed to save message'));
+  }
+});
+
+app.delete('/api/protected/projects/:id/messages', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  console.log('💬 [CHAT API] DELETE /api/protected/projects/:id/messages - Starting');
+  
+  try {
+    const { id: projectId } = req.params;
+    
+    if (!projectId) {
+      res.status(400).json(createErrorResponse('Project ID is required'));
+      return;
+    }
+
+    // First verify the project belongs to the user
+    const projectParams = {
+      TableName: process.env.DYNAMODB_PROJECTS_TABLE || 'gamani-projects',
+      Key: { id: projectId }
+    };
+
+    const projectResult = await dynamodb.get(projectParams).promise();
+    
+    if (!projectResult.Item) {
+      res.status(404).json(createErrorResponse('Project not found'));
+      return;
+    }
+
+    if (projectResult.Item.userId !== req.user?.sub) {
+      res.status(403).json(createErrorResponse('Not authorized to access this project'));
+      return;
+    }
+
+    // Get all messages for the project first
+    const scanParams = {
+      TableName: process.env.DYNAMODB_MESSAGES_TABLE || 'gamani-messages',
+      FilterExpression: 'projectId = :projectId',
+      ExpressionAttributeValues: {
+        ':projectId': projectId
+      }
+    };
+
+    const scanResult = await dynamodb.scan(scanParams).promise();
+    const messages = scanResult.Items || [];
+
+    console.log('💬 [CHAT API] Found', messages.length, 'messages to delete for project:', projectId);
+
+    // Delete each message individually (DynamoDB doesn't support batch delete with filter)
+    const deletePromises = messages.map(message => {
+      const deleteParams = {
+        TableName: process.env.DYNAMODB_MESSAGES_TABLE || 'gamani-messages',
+        Key: { id: message.id }
+      };
+      return dynamodb.delete(deleteParams).promise();
+    });
+
+    await Promise.all(deletePromises);
+    
+    console.log('✅ [CHAT API] All messages deleted successfully');
+    res.json(createApiResponse({ deletedCount: messages.length }, 'Messages cleared successfully'));
+  } catch (error) {
+    console.error('❌ [CHAT API] Error clearing messages:', error);
+    res.status(500).json(createErrorResponse('Failed to clear messages'));
+  }
+});
+
 // AI routes using Google Generative AI
 app.post('/api/protected/ai/generate', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
@@ -448,8 +666,12 @@ app.post('/api/protected/ai/generate', async (req: AuthenticatedRequest, res: Re
       return;
     }
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
-    
+    if (!genAI) {
+      console.error('❌ [GOOGLE AI] AI service not initialized');
+      res.status(503).json(createErrorResponse('AI service not available. Please check server configuration.'));
+      return;
+    }
+
     // Enhanced prompt for game development
     const gamePrompt = `You are a children's game developer. Create a complete, fun, interactive game in Hebrew based on this request: "${prompt}"
 
@@ -465,9 +687,15 @@ Instructions:
 
 Return ONLY the complete HTML code, starting with <!DOCTYPE html> and ending with </html>. Do not include any explanations or markdown formatting.`;
 
-    const result = await model.generateContent(gamePrompt);
-    const response = await result.response;
-    const text = response.text();
+    const result = await genAI.models.generateContent({
+      model: 'gemini-2.0-flash-exp',
+      contents: [{
+        role: 'user',
+        parts: [{ text: gamePrompt }]
+      }]
+    });
+    
+    const text = result.text;
 
     res.json(createApiResponse({ response: text }, 'AI response generated successfully'));
   } catch (error) {

@@ -20,6 +20,16 @@
         "math": "Simple math quiz game",
         "snake": "Colorful snake and fruits game",
         "matching": "Memory matching game for kids"
+      },
+      "history": {
+        "title": "Chat History",
+        "noHistory": "No chat history yet",
+        "clearHistory": "Clear History",
+        "confirmClear": "Are you sure you want to clear chat history?",
+        "user": "You",
+        "assistant": "Gamani",
+        "loadingHistory": "Loading chat history...",
+        "savingMessage": "Saving message..."
       }
     },
     "preview": {

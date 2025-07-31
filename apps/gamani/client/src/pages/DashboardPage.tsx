@@ -6,13 +6,14 @@ import { useTranslation } from 'react-i18next';
 import ProjectManager from '../components/ProjectManager';
 
 const DashboardPage = observer(() => {
-  const { authStore, appStore, projectStore } = useStore();
+  const { authStore, appStore, projectStore, chatStore } = useStore();
   const { t, i18n } = useTranslation();
   const [gamePrompt, setGamePrompt] = useState('');
   const [generatedGame, setGeneratedGame] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showProjectManager, setShowProjectManager] = useState(false);
+  const [showChatHistory, setShowChatHistory] = useState(false);
   
   // DEBUG: State for permissions debugging - DO NOT REMOVE
   const [debugItemsResponse, setDebugItemsResponse] = useState<string>('');
@@ -46,6 +47,15 @@ const DashboardPage = observer(() => {
     }
   };
 
+  // Load chat history when project changes
+  useEffect(() => {
+    if (projectStore.currentProject) {
+      chatStore.setCurrentProjectId(projectStore.currentProject.id);
+    } else {
+      chatStore.setCurrentProjectId(null);
+    }
+  }, [projectStore.currentProject, chatStore]);
+
   // DEBUG: Auto-test items API on component mount - DO NOT REMOVE
   useEffect(() => {
     if (authStore.isAuthenticated) {
@@ -68,6 +78,11 @@ const DashboardPage = observer(() => {
     setError(null);
     
     try {
+      // Save user message to chat history
+      if (projectStore.currentProject) {
+        await chatStore.saveMessage(projectStore.currentProject.id, 'user', gamePrompt);
+      }
+
       const headers = await appStore.getAuthHeaders();
       const response = await fetch('/api/protected/ai/generate', {
         method: 'POST',
@@ -90,9 +105,22 @@ const DashboardPage = observer(() => {
         }
         
         setGeneratedGame(htmlContent);
+
+        // Save assistant message with game code to chat history
+        if (projectStore.currentProject) {
+          await chatStore.saveMessage(
+            projectStore.currentProject.id, 
+            'assistant', 
+            `Generated game: ${gamePrompt}`, 
+            htmlContent
+          );
+        }
       } else {
         throw new Error(result.error || 'Failed to generate game');
       }
+      
+      // Clear the input after successful generation
+      setGamePrompt('');
     } catch (error) {
       console.error('Failed to generate game:', error);
       setError(error instanceof Error ? error.message : 'Failed to generate game');
@@ -225,7 +253,35 @@ const DashboardPage = observer(() => {
         {/* Right Panel - Chat Interface */}
         <div className={`w-full md:w-1/2 bg-gray-800 ${isRTL ? 'border-r' : 'border-l'} border-gray-700 flex flex-col`}>
           <div className="p-4 border-b border-gray-700">
-            <h2 className="text-lg font-semibold mb-2">{t('dashboard.chat.title')}</h2>
+            <div className="flex justify-between items-center mb-2">
+              <h2 className="text-lg font-semibold">{t('dashboard.chat.title')}</h2>
+              {projectStore.currentProject && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setShowChatHistory(!showChatHistory)}
+                    className="px-2 py-1 text-xs bg-gray-600 hover:bg-gray-700 rounded transition-colors"
+                  >
+                    💬 {t('dashboard.chat.history.title')}
+                  </button>
+                  {chatStore.hasMessages && (
+                    <button
+                      onClick={async () => {
+                        if (window.confirm(t('dashboard.chat.history.confirmClear'))) {
+                          try {
+                            await chatStore.clearChatHistory(projectStore.currentProject!.id);
+                          } catch (error) {
+                            console.error('Failed to clear chat history:', error);
+                          }
+                        }
+                      }}
+                      className="px-2 py-1 text-xs bg-red-600 hover:bg-red-700 rounded transition-colors"
+                    >
+                      🗑️ {t('dashboard.chat.history.clearHistory')}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
             <p className="text-sm text-gray-400">
               {t('dashboard.chat.subtitle')}
             </p>
@@ -233,21 +289,73 @@ const DashboardPage = observer(() => {
           
           <div className="flex-1 p-4 overflow-y-auto">
             <div className="space-y-4">
-              {/* Example prompts */}
-              <div className="bg-gray-700 rounded-lg p-3">
-                <h3 className="text-sm font-medium mb-2">{t('dashboard.chat.examples.title')}</h3>
-                <ul className="text-sm text-gray-300 space-y-1">
-                  <li>• {t('dashboard.chat.examples.memory')}</li>
-                  <li>• {t('dashboard.chat.examples.math')}</li>
-                  <li>• {t('dashboard.chat.examples.snake')}</li>
-                  <li>• {t('dashboard.chat.examples.matching')}</li>
-                </ul>
-              </div>
+              {/* Chat History */}
+              {showChatHistory && projectStore.currentProject ? (
+                <div className="bg-gray-700 rounded-lg p-3">
+                  <h3 className="text-sm font-medium mb-3">{t('dashboard.chat.history.title')}</h3>
+                  {chatStore.loading ? (
+                    <div className="text-center py-4">
+                      <div className="animate-spin w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-2"></div>
+                      <p className="text-xs text-gray-400">{t('dashboard.chat.history.loadingHistory')}</p>
+                    </div>
+                  ) : chatStore.hasMessages ? (
+                    <div className="space-y-3 max-h-60 overflow-y-auto">
+                      {chatStore.currentMessages.map((message) => (
+                        <div key={message.id} className="text-sm">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className={`font-medium text-xs ${
+                              message.role === 'user' ? 'text-blue-300' : 'text-green-300'
+                            }`}>
+                              {message.role === 'user' ? t('dashboard.chat.history.user') : t('dashboard.chat.history.assistant')}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              {new Date(message.timestamp).toLocaleString()}
+                            </span>
+                          </div>
+                          <p className="text-gray-300 text-xs bg-gray-800 rounded p-2 break-words">
+                            {message.content}
+                          </p>
+                          {message.gameCode && (
+                            <button
+                              onClick={() => setGeneratedGame(message.gameCode!)}
+                              className="mt-1 px-2 py-1 text-xs bg-blue-600 hover:bg-blue-700 rounded transition-colors"
+                            >
+                              🎮 View Game
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-400 text-center py-4">
+                      {t('dashboard.chat.history.noHistory')}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                /* Example prompts when history is hidden */
+                <div className="bg-gray-700 rounded-lg p-3">
+                  <h3 className="text-sm font-medium mb-2">{t('dashboard.chat.examples.title')}</h3>
+                  <ul className="text-sm text-gray-300 space-y-1">
+                    <li>• {t('dashboard.chat.examples.memory')}</li>
+                    <li>• {t('dashboard.chat.examples.math')}</li>
+                    <li>• {t('dashboard.chat.examples.snake')}</li>
+                    <li>• {t('dashboard.chat.examples.matching')}</li>
+                  </ul>
+                </div>
+              )}
               
               {/* Error display */}
               {error && (
                 <div className="bg-red-900/50 border border-red-700 rounded-lg p-3">
                   <p className="text-red-200 text-sm">{error}</p>
+                </div>
+              )}
+
+              {/* Chat store error display */}
+              {chatStore.error && (
+                <div className="bg-red-900/50 border border-red-700 rounded-lg p-3">
+                  <p className="text-red-200 text-sm">Chat Error: {chatStore.error}</p>
                 </div>
               )}
             </div>
