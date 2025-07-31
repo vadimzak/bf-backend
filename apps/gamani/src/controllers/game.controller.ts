@@ -24,7 +24,8 @@ export class GameController {
       
       res.json(createApiResponse(result, 'Game shared successfully'));
     } catch (error) {
-      res.status(500).json(createErrorResponse('Failed to share game'));
+      console.error('Share game error:', error);
+      res.status(500).json(createErrorResponse(`Failed to share game: ${error instanceof Error ? error.message : 'Unknown error'}`));
     }
   }
 
@@ -32,18 +33,24 @@ export class GameController {
     try {
       const { shareId } = req.params;
 
+      console.log('Getting shared game request:', { shareId, url: req.url, path: req.path });
+
       if (!shareId) {
+        console.log('No shareId provided in request');
         res.status(400).json(createErrorResponse('Share ID is required'));
         return;
       }
 
+      console.log('Fetching shared game from service:', shareId);
       const gameData = await GameSharingService.getSharedGame(shareId);
+      console.log('Successfully retrieved shared game:', { shareId, title: gameData.title });
       res.json(createApiResponse(gameData, 'Shared game retrieved successfully'));
     } catch (error: any) {
+      console.error('Get shared game error:', error);
       if (error.message === 'Shared game not found') {
         res.status(404).json(createErrorResponse('Shared game not found'));
       } else {
-        res.status(500).json(createErrorResponse('Failed to retrieve shared game'));
+        res.status(500).json(createErrorResponse(`Failed to retrieve shared game: ${error.message}`));
       }
     }
   }

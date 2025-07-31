@@ -19,6 +19,7 @@ const DashboardPage = observer(() => {
   const [showGameModal, setShowGameModal] = useState(false);
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   const scrollToBottom = () => {
@@ -103,6 +104,23 @@ const DashboardPage = observer(() => {
       setHasInitialized(true);
     }
   }, [projectStore.loading, hasInitialized]);
+
+  // Close user menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showUserMenu) {
+        const target = event.target as HTMLElement;
+        if (!target.closest('.relative')) {
+          setShowUserMenu(false);
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showUserMenu]);
 
 
   if (!authStore.isAuthenticated) {
@@ -247,7 +265,11 @@ const DashboardPage = observer(() => {
     setIsSharing(true);
     
     try {
-      const gameTitle = `Game created: ${new Date().toLocaleString()}`;
+      // Create a more descriptive title based on the latest prompt or project
+      const gameTitle = projectStore.currentProject?.name 
+        ? `${projectStore.currentProject.name} Game`
+        : `Game created: ${new Date().toLocaleString()}`;
+      
       const headers = await appStore.getAuthHeaders();
       
       const response = await fetch('/api/protected/games/share', {
@@ -256,7 +278,7 @@ const DashboardPage = observer(() => {
         body: JSON.stringify({
           title: gameTitle,
           content: generatedGame,
-          description: gamePrompt
+          description: gamePrompt || 'A game created with Gamani AI'
         })
       });
 
@@ -272,7 +294,7 @@ const DashboardPage = observer(() => {
         // Copy URL to clipboard
         try {
           await navigator.clipboard.writeText(shareUrl);
-          alert(`Game shared successfully! URL: ${shareUrl}`);
+          alert(`🎮 Game shared successfully!\n\n📋 URL copied to clipboard:\n${shareUrl}\n\n✨ Share this link with anyone to let them play your game!`);
         } catch (clipboardError) {
           // Fallback: show URL in prompt for manual copying
           prompt('Copy this URL to share your game:', shareUrl);
@@ -282,7 +304,7 @@ const DashboardPage = observer(() => {
       }
     } catch (error) {
       console.error('Failed to share game:', error);
-      alert('Failed to share game. Please try again.');
+      alert('❌ Failed to share game. Please try again.');
     } finally {
       setIsSharing(false);
     }
@@ -302,23 +324,41 @@ const DashboardPage = observer(() => {
               <span className="hidden sm:inline">{sidebarCollapsed ? '📁 →' : '📁 ←'} Projects</span>
               <span className="sm:hidden">📁</span>
             </button>
-            {projectStore.currentProject && (
-              <span className="text-xs md:text-sm text-blue-300 truncate max-w-24 md:max-w-none">
-                📝 {projectStore.currentProject.name}
-              </span>
-            )}
           </div>
           <div className="flex items-center gap-2 md:gap-4">
-            <span className="text-xs md:text-sm text-gray-300 hidden sm:block">
-              {authStore.user?.profile?.name || authStore.user?.username}
-            </span>
-            <button
-              onClick={handleSignOut}
-              className="px-2 md:px-3 py-1 text-xs md:text-sm bg-red-600 hover:bg-red-700 rounded transition-colors"
-            >
-              <span className="hidden sm:inline">Sign Out</span>
-              <span className="sm:hidden">Exit</span>
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setShowUserMenu(!showUserMenu)}
+                className="flex items-center gap-2 px-2 md:px-3 py-1 text-xs md:text-sm text-gray-300 hover:text-white hover:bg-gray-700 rounded transition-colors"
+              >
+                <span className="hidden sm:inline">
+                  {authStore.user?.profile?.name || authStore.user?.username}
+                </span>
+                <span className="sm:hidden">👤</span>
+                <svg className="w-3 h-3 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              
+              {showUserMenu && (
+                <div className="absolute right-0 top-full mt-1 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-50">
+                  <div className="py-1">
+                    <div className="px-3 py-2 text-xs text-gray-400 border-b border-gray-700 sm:hidden">
+                      {authStore.user?.profile?.name || authStore.user?.username}
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowUserMenu(false);
+                        handleSignOut();
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm text-red-300 hover:bg-red-600 hover:text-white transition-colors"
+                    >
+                      Sign Out
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
         
@@ -432,36 +472,6 @@ const DashboardPage = observer(() => {
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
-          <div className="p-3 md:p-4 border-b border-gray-700">
-            <div className="flex justify-between items-center mb-2">
-              <div className="flex gap-1 md:gap-2 flex-wrap">
-                <button
-                  onClick={() => setShowChatHistory(!showChatHistory)}
-                  className="px-2 py-1 text-xs bg-gray-600 hover:bg-gray-700 rounded transition-colors touch-manipulation"
-                >
-                  <span className="hidden sm:inline">💬 Chat History</span>
-                  <span className="sm:hidden">💬 History</span>
-                </button>
-                {chatStore.hasMessages && (
-                  <button
-                    onClick={async () => {
-                      if (window.confirm('Are you sure you want to clear the chat history?')) {
-                        try {
-                          await chatStore.clearChatHistory(projectStore.currentProject!.id);
-                        } catch (error) {
-                          console.error('Failed to clear chat history:', error);
-                        }
-                      }
-                    }}
-                    className="px-2 py-1 text-xs bg-red-600 hover:bg-red-700 rounded transition-colors touch-manipulation"
-                  >
-                    <span className="hidden sm:inline">🗑️ Clear History</span>
-                    <span className="sm:hidden">🗑️ Clear</span>
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
           
           {/* Chat Messages Area - ChatGPT Style */}
           <div className="flex-1 flex flex-col overflow-hidden">
@@ -526,43 +536,31 @@ const DashboardPage = observer(() => {
               )}
 
 
-              {/* Current Conversation - Enhanced ChatGPT Style */}
+              {/* Current Conversation - Modern ChatBot Style */}
               {chatStore.currentMessages.length > 0 ? (
                 <div className="space-y-4 md:space-y-6">
                   {chatStore.currentMessages.map((message) => (
-                    <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} group`}>
-                      <div className={`max-w-[90%] md:max-w-[85%] ${message.role === 'user' ? 'order-2' : 'order-1'}`}>
-                        {/* Avatar and Name */}
-                        <div className={`flex items-center gap-1.5 md:gap-2 mb-1.5 md:mb-2 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                          <div className={`w-5 h-5 md:w-6 md:h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                            message.role === 'user' 
-                              ? 'bg-blue-600 text-white' 
-                              : 'bg-green-600 text-white'
-                          }`}>
-                            {message.role === 'user' ? 'Y' : 'G'}
+                    <div key={message.id} className={`group ${message.role === 'user' ? 'flex justify-end' : ''}`}>
+                      {message.role === 'user' ? (
+                        /* User Message - Bubble Style */
+                        <div className="max-w-[80%] md:max-w-[70%]">
+                          <div className="bg-blue-600 text-white rounded-2xl px-3 py-2.5 md:px-4 md:py-3 shadow-lg">
+                            <div className="text-sm leading-relaxed">
+                              <p className="break-words whitespace-pre-wrap">
+                                {message.content}
+                              </p>
+                            </div>
                           </div>
-                          <span className={`font-medium text-xs md:text-sm ${
-                            message.role === 'user' ? 'text-blue-300' : 'text-green-300'
-                          }`}>
-                            {message.role === 'user' ? 'You' : 'Gamani'}
-                          </span>
-                          <span className="text-xs text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity hidden md:inline">
-                            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
                         </div>
-                        
-                        {/* Message Content */}
-                        <div className={`rounded-2xl px-3 py-2.5 md:px-4 md:py-3 ${
-                          message.role === 'user' 
-                            ? 'bg-blue-600 text-white shadow-lg' 
-                            : 'bg-gray-700 text-gray-100 shadow-lg border border-gray-600'
-                        }`}>
-                          <div className="text-sm leading-relaxed">
+                      ) : (
+                        /* LLM Message - No Bubble, Direct on Background */
+                        <div className="w-full">
+                          <div className="text-gray-100 text-sm leading-relaxed">
                             <p className="break-words whitespace-pre-wrap">
                               {message.content}
                             </p>
                             {message.gameCode && (
-                              <div className="mt-2 md:mt-3 px-2.5 md:px-3 py-1.5 md:py-2 bg-green-500/20 border border-green-500/30 rounded-lg">
+                              <div className="mt-3 md:mt-4 p-3 md:p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
                                 <div className="flex items-center gap-2">
                                   <span className="text-base md:text-lg">🎮</span>
                                   <span className="text-xs md:text-sm font-medium text-green-300">Game Generated</span>
@@ -575,7 +573,7 @@ const DashboardPage = observer(() => {
                             )}
                           </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -602,25 +600,14 @@ const DashboardPage = observer(() => {
 
               {/* Loading indicator for generation */}
               {isGenerating && (
-                <div className="flex justify-start group">
-                  <div className="max-w-[85%]">
-                    {/* Avatar and Name */}
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="w-6 h-6 rounded-full bg-green-600 text-white flex items-center justify-center text-xs font-bold">
-                        G
-                      </div>
-                      <span className="font-medium text-sm text-green-300">
-                        Gamani
-                      </span>
-                    </div>
-                    
-                    {/* Typing Indicator */}
-                    <div className="bg-gray-700 shadow-lg border border-gray-600 rounded-2xl px-4 py-3">
+                <div className="group">
+                  <div className="w-full">
+                    <div className="text-gray-300 text-sm leading-relaxed">
                       <div className="flex items-center gap-3">
                         <div className="flex gap-1">
-                          <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                          <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                          <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                          <div className="w-2 h-2 bg-green-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                          <div className="w-2 h-2 bg-green-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                          <div className="w-2 h-2 bg-green-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
                         </div>
                         <p className="text-gray-300 text-sm">
                           Thinking...
@@ -678,9 +665,6 @@ const DashboardPage = observer(() => {
                 <div className="text-xs text-gray-500">
                   <span className="hidden sm:inline">Press Enter to send, Shift+Enter for new line</span>
                   <span className="sm:hidden">Enter to send</span>
-                </div>
-                <div className="text-xs text-gray-500">
-                  {gamePrompt.length}/2000
                 </div>
               </div>
             </div>

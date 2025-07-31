@@ -27,9 +27,17 @@ export async function initializeCriticalServices(): Promise<void> {
   
   try {
     await validateAWSServices();
-    await initializeGoogleAI();
     
-    logger.success('All critical services initialized successfully');
+    // Try to initialize Google AI, but don't fail if it's not available
+    try {
+      await initializeGoogleAI();
+      logger.success('Google AI initialized successfully');
+    } catch (googleAIError) {
+      logger.warning('Google AI initialization failed, game generation will be disabled:', googleAIError);
+      // Don't throw - allow server to start without Google AI for testing other features
+    }
+    
+    logger.success('Critical services initialized (Google AI optional)');
   } catch (error) {
     logger.error('Critical service initialization failed:', error);
     logger.error('Server startup aborted due to service initialization failure');
