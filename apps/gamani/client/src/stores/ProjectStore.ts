@@ -22,6 +22,26 @@ export class ProjectStore {
     this.projects = projects;
   }
 
+  getMostRecentProject(): Project | null {
+    if (this.projects.length === 0) return null;
+    
+    // Sort by updatedAt timestamp (most recent first)
+    const sortedProjects = [...this.projects].sort((a, b) => 
+      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
+    
+    return sortedProjects[0];
+  }
+
+  autoSelectProject() {
+    if (!this.currentProject && this.projects.length > 0) {
+      const mostRecent = this.getMostRecentProject();
+      if (mostRecent) {
+        this.setCurrentProject(mostRecent);
+      }
+    }
+  }
+
   setCurrentProject(project: Project | null) {
     this.currentProject = project;
   }
@@ -93,6 +113,9 @@ export class ProjectStore {
       const result = await response.json();
       if (result.success) {
         this.setProjects(result.data.projects || []);
+        
+        // Auto-select the most recent project if none is currently selected
+        this.autoSelectProject();
       } else {
         throw new Error(result.error || 'Failed to fetch projects');
       }

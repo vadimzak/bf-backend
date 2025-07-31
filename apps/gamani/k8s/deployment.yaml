@@ -15,6 +15,7 @@ spec:
       labels:
         app: gamani
     spec:
+      serviceAccountName: gamani-service-account
       containers:
       - name: app
         image: 363397505860.dkr.ecr.il-central-1.amazonaws.com/gamani:latest
@@ -35,6 +36,10 @@ spec:
           value: "2025-07-31T16:32:01Z"
         - name: APP_DEPLOYED_BY
           value: "vadimzak"
+        - name: AWS_ROLE_ARN
+          value: "arn:aws:iam::363397505860:role/gamani-app-role"
+        - name: AWS_WEB_IDENTITY_TOKEN_FILE
+          value: "/var/run/secrets/kubernetes.io/serviceaccount/token"
         livenessProbe:
           httpGet:
             path: /health

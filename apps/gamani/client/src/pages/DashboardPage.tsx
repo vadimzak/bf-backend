@@ -10,10 +10,11 @@ const DashboardPage = observer(() => {
   const [generatedGame, setGeneratedGame] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showProjectManager, setShowProjectManager] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showChatHistory, setShowChatHistory] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
   const [currentGameContext, setCurrentGameContext] = useState<string>('');
+  const [hasInitialized, setHasInitialized] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   const scrollToBottom = () => {
@@ -64,6 +65,13 @@ const DashboardPage = observer(() => {
       }
     }
   }, [chatStore.currentMessages, projectStore.currentProject, currentGameContext]);
+
+  // Initialize the component (no special auto-open logic needed since there will always be a project)
+  useEffect(() => {
+    if (!hasInitialized && !projectStore.loading) {
+      setHasInitialized(true);
+    }
+  }, [projectStore.loading, hasInitialized]);
 
 
   if (!authStore.isAuthenticated) {
@@ -191,6 +199,17 @@ const DashboardPage = observer(() => {
     }
   };
 
+  const openGameFullScreen = () => {
+    if (!generatedGame) return;
+    
+    const newWindow = window.open('', '_blank');
+    if (newWindow) {
+      newWindow.document.open();
+      newWindow.document.write(generatedGame);
+      newWindow.document.close();
+    }
+  };
+
   const shareGame = async () => {
     if (!generatedGame) return;
     
@@ -244,17 +263,12 @@ const DashboardPage = observer(() => {
       <div className="bg-gray-800 border-b border-gray-700 px-4 py-3">
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-4">
+            <h1 className="text-xl font-bold">Gamani - Game Creator</h1>
             <button
-              onClick={handleSignOut}
-              className="px-3 py-1 text-sm bg-red-600 hover:bg-red-700 rounded transition-colors"
-            >
-              Sign Out
-            </button>
-            <button
-              onClick={() => setShowProjectManager(!showProjectManager)}
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
               className="px-3 py-1 text-sm bg-gray-600 hover:bg-gray-700 rounded transition-colors"
             >
-              {showProjectManager ? '📁 ←' : '📁 →'} Projects
+              {sidebarCollapsed ? '📁 →' : '📁 ←'} Projects
             </button>
             {projectStore.currentProject && (
               <span className="text-sm text-blue-300">
@@ -266,34 +280,50 @@ const DashboardPage = observer(() => {
             <span className="text-sm text-gray-300">
               {authStore.user?.profile?.name || authStore.user?.username}
             </span>
-            <h1 className="text-xl font-bold">Gamani - Game Creator</h1>
+            <button
+              onClick={handleSignOut}
+              className="px-3 py-1 text-sm bg-red-600 hover:bg-red-700 rounded transition-colors"
+            >
+              Sign Out
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Project Manager Panel */}
-      {showProjectManager && (
-        <div className="bg-gray-850 border-b border-gray-700 px-4 py-3">
-          <ProjectManager />
-        </div>
-      )}
-
-
-      {/* Main Content - Split Layout */}
+      {/* Main Content - 3-panel Layout with Sidebar */}
       <div className="flex h-[calc(100vh-64px)]">
-        {/* Left Panel - Game Preview */}
-        <div className="hidden md:flex md:w-1/2 bg-gray-900 flex flex-col">
+        {/* Left Sidebar - Projects */}
+        <div className={`bg-gray-800 border-r border-gray-700 transition-all duration-300 ${
+          sidebarCollapsed ? 'w-0 overflow-hidden' : 'w-80'
+        }`}>
+          {!sidebarCollapsed && (
+            <div className="p-4 h-full overflow-y-auto">
+              <ProjectManager />
+            </div>
+          )}
+        </div>
+        {/* Center Panel - Game Preview */}
+        <div className="hidden md:flex flex-1 bg-gray-900 flex flex-col">
           <div className="p-4 border-b border-gray-700">
             <div className="flex justify-between items-center">
               <h2 className="text-lg font-semibold">Game Preview</h2>
               {generatedGame && (
-                <button
-                  onClick={shareGame}
-                  disabled={isSharing}
-                  className="px-3 py-1 text-sm bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded transition-colors"
-                >
-                  {isSharing ? 'Sharing...' : 'Share'}
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={openGameFullScreen}
+                    className="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 rounded transition-colors"
+                    title="Open game in new tab"
+                  >
+                    ⛶ Full Screen
+                  </button>
+                  <button
+                    onClick={shareGame}
+                    disabled={isSharing}
+                    className="px-3 py-1 text-sm bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded transition-colors"
+                  >
+                    {isSharing ? 'Sharing...' : 'Share'}
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -331,35 +361,33 @@ const DashboardPage = observer(() => {
         </div>
 
         {/* Right Panel - Chat Interface */}
-        <div className="w-full md:w-1/2 bg-gray-800 border-l border-gray-700 flex flex-col">
+        <div className="w-full md:flex-1 bg-gray-800 border-l border-gray-700 flex flex-col">
           <div className="p-4 border-b border-gray-700">
             <div className="flex justify-between items-center mb-2">
-              {projectStore.currentProject && (
-                <div className="flex gap-2">
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowChatHistory(!showChatHistory)}
+                  className="px-2 py-1 text-xs bg-gray-600 hover:bg-gray-700 rounded transition-colors"
+                >
+                  💬 Chat History
+                </button>
+                {chatStore.hasMessages && (
                   <button
-                    onClick={() => setShowChatHistory(!showChatHistory)}
-                    className="px-2 py-1 text-xs bg-gray-600 hover:bg-gray-700 rounded transition-colors"
-                  >
-                    💬 Chat History
-                  </button>
-                  {chatStore.hasMessages && (
-                    <button
-                      onClick={async () => {
-                        if (window.confirm('Are you sure you want to clear the chat history?')) {
-                          try {
-                            await chatStore.clearChatHistory(projectStore.currentProject!.id);
-                          } catch (error) {
-                            console.error('Failed to clear chat history:', error);
-                          }
+                    onClick={async () => {
+                      if (window.confirm('Are you sure you want to clear the chat history?')) {
+                        try {
+                          await chatStore.clearChatHistory(projectStore.currentProject!.id);
+                        } catch (error) {
+                          console.error('Failed to clear chat history:', error);
                         }
-                      }}
-                      className="px-2 py-1 text-xs bg-red-600 hover:bg-red-700 rounded transition-colors"
-                    >
-                      🗑️ Clear History
-                    </button>
-                  )}
-                </div>
-              )}
+                      }
+                    }}
+                    className="px-2 py-1 text-xs bg-red-600 hover:bg-red-700 rounded transition-colors"
+                  >
+                    🗑️ Clear History
+                  </button>
+                )}
+              </div>
             </div>
           </div>
           
@@ -382,8 +410,8 @@ const DashboardPage = observer(() => {
               )}
 
               {/* Chat History Panel */}
-              {showChatHistory && projectStore.currentProject && (
-                <div className="bg-gray-850 border border-gray-600 rounded-lg p-4 mb-4">
+              {showChatHistory && (
+                <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-4">
                   <div className="flex justify-between items-center mb-3">
                     <h4 className="text-sm font-medium text-gray-300">Conversation History</h4>
                     <button
@@ -396,8 +424,8 @@ const DashboardPage = observer(() => {
                   
                   {chatStore.currentMessages.length > 0 ? (
                     <div className="space-y-2 max-h-40 overflow-y-auto">
-                      {chatStore.currentMessages.map((message, index) => (
-                        <div key={message.id} className="text-xs p-2 bg-gray-700 rounded border border-gray-600">
+                      {chatStore.currentMessages.map((message, _index) => (
+                        <div key={message.id} className="text-xs p-3 bg-gray-700 rounded-lg border border-gray-600 hover:bg-gray-650 transition-colors">
                           <div className="flex justify-between items-start">
                             <span className={`font-medium ${message.role === 'user' ? 'text-blue-300' : 'text-green-300'}`}>
                               {message.role === 'user' ? 'You' : 'Gamani'}:
@@ -416,30 +444,18 @@ const DashboardPage = observer(() => {
                       ))}
                     </div>
                   ) : (
-                    <div className="text-xs text-gray-500 text-center py-2">
-                      No conversation history yet
+                    <div className="text-sm text-gray-400 text-center py-6 bg-gray-700/50 rounded-lg border border-gray-600">
+                      <div className="mb-2">💬</div>
+                      <div>No conversation history yet</div>
+                      <div className="text-xs text-gray-500 mt-1">Start chatting to see your message history</div>
                     </div>
                   )}
                 </div>
               )}
 
-              {/* No Project Warning */}
-              {!projectStore.currentProject && (
-                <div className="bg-yellow-900/30 border border-yellow-600 rounded-lg p-4 mb-4">
-                  <div className="flex items-center gap-3">
-                    <span className="text-yellow-400 text-xl">⚠️</span>
-                    <div>
-                      <h4 className="text-yellow-200 font-medium">No Project Selected</h4>
-                      <p className="text-yellow-300 text-sm mt-1">
-                        Please create or select a project to start chatting. Click the "📁 → Projects" button above.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
 
               {/* Current Conversation - Enhanced ChatGPT Style */}
-              {projectStore.currentProject && chatStore.currentMessages.length > 0 ? (
+              {chatStore.currentMessages.length > 0 ? (
                 <div className="space-y-6">
                   {chatStore.currentMessages.map((message) => (
                     <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} group`}>
@@ -490,7 +506,7 @@ const DashboardPage = observer(() => {
                     </div>
                   ))}
                 </div>
-              ) : projectStore.currentProject ? (
+              ) : (
                 <div className="flex items-center justify-center h-full">
                   <div className="text-center space-y-4">
                     <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-green-500 rounded-full mx-auto flex items-center justify-center">
@@ -509,7 +525,7 @@ const DashboardPage = observer(() => {
                     </div>
                   </div>
                 </div>
-              ) : null}
+              )}
 
               {/* Loading indicator for generation */}
               {isGenerating && (

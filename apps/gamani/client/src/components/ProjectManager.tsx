@@ -8,14 +8,17 @@ const ProjectManager = observer(() => {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [createLoading, setCreateLoading] = useState(false);
+  const [hasTriedAutoCreate, setHasTriedAutoCreate] = useState(false);
 
   useEffect(() => {
     const loadProjects = async () => {
       await projectStore.fetchProjects();
       
-      // Auto-create default project if none exist and user hasn't manually created one
-      if (projectStore.projects.length === 0 && !projectStore.currentProject) {
+      // Auto-create default project if none exist (only run once)
+      if (projectStore.projects.length === 0 && !projectStore.loading && !hasTriedAutoCreate) {
+        setHasTriedAutoCreate(true);
         try {
+          console.log('Creating default project - no projects found');
           await projectStore.createProject('My First Game Project', 'Default project for creating games');
         } catch (error) {
           console.error('Failed to create default project:', error);
@@ -24,7 +27,7 @@ const ProjectManager = observer(() => {
     };
     
     loadProjects();
-  }, [projectStore]);
+  }, []); // Empty dependency array - run only once on mount
 
   const handleCreateProject = async () => {
     if (!newProjectName.trim()) return;
@@ -112,20 +115,6 @@ const ProjectManager = observer(() => {
         </div>
       )}
 
-      {/* Current Project */}
-      {projectStore.currentProject && (
-        <div className="mb-4 p-3 bg-blue-900/50 border border-blue-700 rounded">
-          <div className="flex justify-between items-center">
-            <div>
-              <div className="text-sm text-blue-300">Current Project</div>
-              <div className="font-medium">{projectStore.currentProject.name}</div>
-              <div className="text-xs text-gray-400">
-                Last modified: {formatDate(projectStore.currentProject.updatedAt)}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Projects List */}
       <div className="space-y-2">
@@ -159,7 +148,14 @@ const ProjectManager = observer(() => {
           >
             <div className="flex justify-between items-start">
               <div className="flex-1 min-w-0">
-                <div className="font-medium truncate">{project.name}</div>
+                <div className="flex items-center gap-2">
+                  <div className="font-medium truncate">{project.name}</div>
+                  {projectStore.currentProject?.id === project.id && (
+                    <span className="px-2 py-0.5 text-xs bg-blue-600 text-white rounded-full">
+                      ACTIVE
+                    </span>
+                  )}
+                </div>
                 {project.description && (
                   <div className="text-xs text-gray-400 truncate">{project.description}</div>
                 )}
