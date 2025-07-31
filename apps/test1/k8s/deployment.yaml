@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test1
+  namespace: apps
+  labels:
+    app: test1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test1
+  template:
+    metadata:
+      labels:
+        app: test1
+    spec:
+      serviceAccountName: test1-service-account
+      containers:
+      - name: app
+        image: 363397505860.dkr.ecr.il-central-1.amazonaws.com/test1:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+          name: http
+        env:
+        - name: NODE_ENV
+          value: production
+        - name: PORT
+          value: "3000"
+        - name: APP_VERSION
+          value: "1.0.6"
+        - name: APP_GIT_COMMIT
+          value: "abe37a5"
+        - name: APP_BUILD_TIME
+          value: "2025-07-31T16:32:07Z"
+        - name: APP_DEPLOYED_BY
+          value: "vadimzak"
+        - name: AWS_REGION
+          value: "il-central-1"
+        - name: AWS_ROLE_ARN
+          value: "arn:aws:iam::363397505860:role/test1-app-role"
+        - name: AWS_WEB_IDENTITY_TOKEN_FILE
+          value: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"

@@ -1,0 +1,22 @@
+{
+  "name": "test1",
+  "version": "1.0.6",
+  "description": "Simple test app for deployment verification",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "ts-node src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.857.0",
+    "@aws-sdk/lib-dynamodb": "^3.857.0",
+    "express": "^4.21.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.2"
+  }
+}
