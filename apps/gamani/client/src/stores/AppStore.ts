@@ -1,5 +1,5 @@
 import { makeAutoObservable } from 'mobx';
-import { fetchAuthSession } from 'aws-amplify/auth';
+import { getAuthHeaders } from '../utils/auth-headers';
 
 interface Item {
   id: string;
@@ -35,38 +35,7 @@ export class AppStore {
   }
 
   async getAuthHeaders(): Promise<HeadersInit> {
-    try {
-      console.log('🔐 [APPSTORE] Getting auth headers...');
-      
-      // Get the current session directly from User Pool
-      const session = await fetchAuthSession();
-      console.log('🔐 [APPSTORE] Session obtained:', { 
-        hasTokens: !!session.tokens,
-        hasAccessToken: !!session.tokens?.accessToken 
-      });
-      
-      const accessToken = session.tokens?.accessToken?.toString();
-      
-      if (!accessToken) {
-        console.error('❌ [APPSTORE] No access token in session');
-        throw new Error('No access token available');
-      }
-
-      console.log('✅ [APPSTORE] Access token obtained, length:', accessToken.length);
-      
-      return {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      };
-    } catch (error) {
-      console.error('❌ [APPSTORE] Failed to get auth token:', error);
-      console.error('❌ [APPSTORE] Error details:', {
-        name: error instanceof Error ? error.name : 'Unknown',
-        message: error instanceof Error ? error.message : String(error),
-        code: (error as any)?.code || 'unknown'
-      });
-      throw new Error('Authentication failed');
-    }
+    return getAuthHeaders();
   }
 
   async fetchItems() {

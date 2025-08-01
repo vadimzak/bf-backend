@@ -2,12 +2,14 @@ import { Express } from 'express';
 import express from 'express';
 import path from 'path';
 import { authRoutes } from './auth.routes';
+import { mockAuthRoutes } from './mock-auth.routes';
 import { protectedRoutes } from './protected.routes';
 import { publicRoutes } from './public.routes';
 import { authenticateCognito } from '../middleware';
 
 export function setupRoutes(app: Express): void {
   app.use('/api/auth', authRoutes);
+  app.use('/api/mock-auth', mockAuthRoutes);
   app.use('/api/protected', authenticateCognito, protectedRoutes);
   
   // Serve static assets from client/dist BEFORE any catch-all routes

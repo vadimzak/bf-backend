@@ -1,4 +1,5 @@
 import { makeAutoObservable } from 'mobx';
+import { getAuthHeaders } from '../utils/auth-headers';
 
 export interface Project {
   id: string;
@@ -76,25 +77,7 @@ export class ProjectStore {
   }
 
   async getAuthHeaders(): Promise<HeadersInit> {
-    // Import dynamically to avoid circular dependency
-    const { fetchAuthSession } = await import('aws-amplify/auth');
-    
-    try {
-      const session = await fetchAuthSession();
-      const accessToken = session.tokens?.accessToken?.toString();
-      
-      if (!accessToken) {
-        throw new Error('No access token available');
-      }
-
-      return {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      };
-    } catch (error) {
-      console.error('Failed to get auth token:', error);
-      throw new Error('Authentication failed');
-    }
+    return getAuthHeaders();
   }
 
   async fetchProjects() {

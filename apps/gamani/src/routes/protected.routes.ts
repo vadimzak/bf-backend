@@ -18,6 +18,7 @@ router.put('/projects/:id', ProjectController.updateProject);
 router.delete('/projects/:id', ProjectController.deleteProject);
 
 router.get('/projects/:id/messages', MessageController.getMessages);
+
 router.post('/projects/:id/messages', MessageController.createMessage);
 router.delete('/projects/:id/messages', MessageController.clearMessages);
 

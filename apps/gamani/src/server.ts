@@ -4,6 +4,7 @@ import { configureSecurityMiddleware, requestLogging, errorHandler } from './mid
 import { setupRoutes } from './routes';
 import { initializeCriticalServices } from './utils/startup';
 import { createLogger } from './utils/logger';
+import { logMockAuthStatus } from './middleware/mock-auth.middleware';
 
 dotenv.config();
 
@@ -34,6 +35,7 @@ async function startServer(): Promise<void> {
       logger.debug(`Build time: ${buildTime}`);
       logger.debug(`Deployed by: ${deployedBy}`);
       logger.success('All services initialized successfully');
+      logMockAuthStatus();
     });
   } catch (error) {
     logger.error('Failed to start server due to initialization errors');

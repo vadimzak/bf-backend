@@ -20,9 +20,14 @@ export class AuthStore {
   user: CognitoUser | null = null;
   loading = false;
   error: string | null = null;
+  mockAuthEnabled = false;
 
   constructor() {
     makeAutoObservable(this);
+    // Check if mock authentication is enabled
+    this.mockAuthEnabled = localStorage.getItem('mockAuthEnabled') === 'true' || 
+                          (import.meta.env?.NODE_ENV === 'development' && 
+                           window.location.search.includes('mock=true'));
   }
 
   setUser(user: CognitoUser | null) {
@@ -64,15 +69,47 @@ export class AuthStore {
   }
 
   get isAuthenticated() {
+    if (this.mockAuthEnabled) {
+      const mockUser = localStorage.getItem('mockUser');
+      return !!this.user || !!mockUser;
+    }
     return !!this.user;
+  }
+
+  setupMockAuth(mockUserData: any) {
+    console.log('🎭 [AUTHSTORE] Setting up mock authentication with:', mockUserData);
+    this.mockAuthEnabled = true;
+    localStorage.setItem('mockAuthEnabled', 'true');
+    localStorage.setItem('mockUser', JSON.stringify(mockUserData));
+    
+    // Convert mock user data to CognitoUser format
+    const cognitoUser: CognitoUser = {
+      userId: mockUserData.sub,
+      username: mockUserData.username,
+      profile: {
+        email: mockUserData.email,
+        name: mockUserData.username
+      }
+    };
+    
+    this.setUser(cognitoUser);
+    this.setLoading(false);
+    console.log('✅ [AUTHSTORE] Mock authentication setup complete');
   }
 
   async signOut() {
     console.log('🚪 [AUTHSTORE] signOut called');
     try {
-      console.log('🚪 [AUTHSTORE] Calling Cognito signOut...');
-      await signOut();
-      console.log('✅ [AUTHSTORE] Cognito signOut completed successfully');
+      if (this.mockAuthEnabled) {
+        console.log('🚪 [AUTHSTORE] Mock sign out...');
+        localStorage.removeItem('mockAuthEnabled');
+        localStorage.removeItem('mockUser');
+        this.mockAuthEnabled = false;
+      } else {
+        console.log('🚪 [AUTHSTORE] Calling Cognito signOut...');
+        await signOut();
+        console.log('✅ [AUTHSTORE] Cognito signOut completed successfully');
+      }
       this.setUser(null);
     } catch (error) {
       console.error('❌ [AUTHSTORE] Sign out error:', error);
